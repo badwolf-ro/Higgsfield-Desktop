@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Higgsfield Settings</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-title">Settings</div>
+      <nav class="nav" aria-label="Settings sections">
+        <button class="nav-item" type="button" data-section="general">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+          <span>General</span>
+        </button>
+        <button class="nav-item" type="button" data-section="downloads">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>
+          <span>Downloads</span>
+        </button>
+        <button class="nav-item" type="button" data-section="workspaces">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M11 4.5v15M11 12h9.5"/></svg>
+          <span>Workspaces</span>
+        </button>
+        <button class="nav-item" type="button" data-section="hotkeys">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M7 10h.01M11 10h.01M15 10h.01M17 10h.01M8 14h8"/></svg>
+          <span>Hotkeys</span>
+        </button>
+      </nav>
+      <p class="sidebar-foot">Changes are saved automatically.</p>
+    </aside>
+
+    <main class="content" id="content">
+      <section class="page" data-section="general" hidden>
+        <header class="page-header">
+          <h1>General</h1>
+          <p class="page-desc">How the Higgsfield window, its panels and its notifications behave.</p>
+        </header>
+        <h2 class="section-label">Window</h2>
+        <div class="card">
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-tray">Keep running in the tray when the window is closed</span>
+              <span class="row-desc" id="d-tray">Closing the window hides Higgsfield to the notification area. Quit from the tray icon's menu.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="tray.closeToTray"
+              aria-labelledby="t-tray" aria-describedby="d-tray">
+          </label>
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-menu">Hide the menu bar (press Alt to show it)</span>
+              <span class="row-desc" id="d-menu">Gives the page a little more room.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="menuBar.autoHide"
+              aria-labelledby="t-menu" aria-describedby="d-menu">
+          </label>
+        </div>
+        <h2 class="section-label">Layout</h2>
+        <div class="card">
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-fit">Keep Higgsfield's desktop layout in narrow panels</span>
+              <span class="row-desc" id="d-fit">A narrow panel shows the full desktop page scaled down, instead of
+                Higgsfield's cramped mobile layout.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="layout.fitDesktop"
+              aria-labelledby="t-fit" aria-describedby="d-fit">
+          </label>
+          <div class="row" id="row-min-width">
+            <span class="row-text">
+              <label class="row-title" for="min-page-width">Minimum page width</label>
+              <span class="row-desc" id="d-minwidth">Panels narrower than this are scaled to fit.</span>
+            </span>
+            <span class="select">
+              <select id="min-page-width" aria-describedby="d-minwidth">
+                <option value="1024">1024 px (default)</option>
+                <option value="1280">1280 px</option>
+                <option value="1440">1440 px</option>
+                <option value="1600">1600 px</option>
+              </select>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+            </span>
+          </div>
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-lock">Lock layout (prevent dragging tabs)</span>
+              <span class="row-desc" id="d-lock">Tabs can still be opened and closed, but not dragged or docked.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="layout.locked"
+              aria-labelledby="t-lock" aria-describedby="d-lock">
+          </label>
+        </div>
+        <h2 class="section-label" id="group-notifications">Notifications</h2>
+        <div class="card">
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-notify">Notify me when a generation finishes</span>
+              <span class="row-desc" id="d-notify">Shows a Windows notification when an image or video is ready.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="notifications.generationDone"
+              aria-labelledby="t-notify" aria-describedby="d-notify">
+          </label>
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-flash">Flash the taskbar button</span>
+              <span class="row-desc" id="d-flash">Draws your eye to Higgsfield when it finishes something while you are in another app.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="notifications.flashTaskbar"
+              aria-labelledby="t-flash" aria-describedby="d-flash">
+          </label>
+        </div>
+      </section>
+
+      <section class="page" data-section="downloads" hidden>
+        <header class="page-header">
+          <h1>Downloads</h1>
+          <p class="page-desc">Where images and videos you download from Higgsfield end up.</p>
+        </header>
+        <div class="card">
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-autosave">Save downloads automatically</span>
+              <span class="row-desc" id="d-autosave">Files go straight to the folder below, without a Save dialog.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="downloads.autoSave"
+              aria-labelledby="t-autosave" aria-describedby="d-autosave">
+          </label>
+          <div class="row row-stack">
+            <span class="row-text">
+              <span class="row-title" id="t-folder">Download folder</span>
+              <span class="row-desc" id="folder-hint">Downloads are saved here. Files from a Cinema Studio project go
+                into a subfolder named after the project.</span>
+            </span>
+            <div class="folder">
+              <div class="folder-path" role="group" aria-labelledby="t-folder">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>
+                <span id="folder-path"></span>
+              </div>
+              <div class="folder-actions">
+                <button class="btn" type="button" id="choose-folder">Change…</button>
+                <button class="btn" type="button" id="open-folder">Open folder</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <h2 class="section-label" id="pj-head">Cinema Studio projects</h2>
+        <p class="group-desc">When a tab is inside a Cinema Studio project, files you download from it are saved in
+          that project's own folder.</p>
+        <div class="card pj-list" id="pj-list" role="list" aria-labelledby="pj-head"></div>
+        <div class="empty-note" id="pj-empty" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5h16v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M4 10.5L3.4 7.7a1.5 1.5 0 0 1 1.2-1.8l12.6-2.5a1.5 1.5 0 0 1 1.8 1.2l.5 2.4z"/><path d="M8.3 5.2l2.2 3.9M13.2 4.2l2.2 3.9"/></svg>
+          <p>Open a project in Cinema Studio and it will show up here.</p>
+        </div>
+      </section>
+
+      <section class="page page-workspaces" data-section="workspaces" hidden>
+        <header class="page-header">
+          <h1>Workspaces</h1>
+          <p class="page-desc">Named snapshots of your tabs and splits.</p>
+        </header>
+        <div class="card ws-save">
+          <div class="row row-stack">
+            <label class="row-title" for="ws-name">Save current layout</label>
+            <div class="ws-save-line">
+              <input class="text-input" id="ws-name" type="text" maxlength="60" autocomplete="off" spellcheck="false"
+                placeholder="Name, for example “Image + Video”" aria-describedby="ws-save-message">
+              <button class="btn btn-primary" type="button" id="ws-save">Save current layout</button>
+            </div>
+            <div class="ws-save-feedback">
+              <span id="ws-save-message"></span>
+              <button class="btn btn-xs" type="button" id="ws-replace" hidden>Replace it</button>
+            </div>
+          </div>
+        </div>
+        <h2 class="section-label" id="ws-list-head">Saved workspaces</h2>
+        <div class="card ws-list" id="ws-list" role="list" aria-labelledby="ws-list-head"></div>
+        <div class="empty-note" id="ws-empty" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M11 4.5v15M11 12h9.5"/></svg>
+          <p><strong>No workspaces yet.</strong> A workspace saves your current tabs and splits under a name, so you can
+            bring that exact layout back with one click.</p>
+        </div>
+        <p class="ws-tip" id="ws-tip">“Load workspace 1–9” follow this order.
+          <button class="link-btn" type="button" id="ws-hotkeys-link">Give them shortcuts in Hotkeys</button></p>
+      </section>
+
+      <section class="page page-hotkeys" data-section="hotkeys" hidden>
+        <header class="page-header">
+          <h1>Hotkeys</h1>
+          <p class="page-desc">Click Change, then press the keys you want. Shortcuts work while Higgsfield is the
+            active window, except those marked “Works in any app”.</p>
+        </header>
+        <div class="hk-toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+            <input id="hk-search" type="search" placeholder="Search shortcuts" aria-label="Search shortcuts"
+              autocomplete="off" spellcheck="false">
+          </div>
+          <button class="btn" type="button" id="hk-reset-all">Reset all to defaults</button>
+        </div>
+        <div class="hk-list" id="hk-list"></div>
+        <p class="hk-empty" id="hk-empty" hidden>No shortcuts match “<span id="hk-empty-query"></span>”.</p>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="dialog" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-desc">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-desc"></p>
+      <div class="dialog-actions">
+        <button class="btn" type="submit" value="cancel" id="confirm-cancel" autofocus>Cancel</button>
+        <button class="btn btn-primary" type="submit" value="ok" id="confirm-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="sr-only" id="live" aria-live="polite"></div>
+
+  <script src="../../shared/keys.js"></script>
+  <script src="../../shared/actions.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+{
+  "name": "higgsfield-desktop",
+  "productName": "Higgsfield",
+  "version": "2.0.0",
+  "description": "Desktop wrapper for higgsfield.ai",
+  "author": "Radu@BadWolf <contact@badwolf.ro>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/badwolf-ro/Higgsfield-Desktop.git"
+  },
+  "homepage": "https://github.com/badwolf-ro/Higgsfield-Desktop",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "ro.badwolf.higgsfield",
+    "productName": "Higgsfield",
+    "files": [
+      "main.js",
+      "src/**/*",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Higgsfield"
+    },
+    "portable": {
+      "artifactName": "Higgsfield-Portable-${version}.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "dockview-core": "^8.3.1"
+  }
+}
