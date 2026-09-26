@@ -2,10 +2,11 @@
 
 A Windows desktop app for [higgsfield.ai](https://higgsfield.ai). It runs the real Higgsfield website in its own window, with a few desktop features on top:
 
+- toolbar buttons for the sections you use most (Image, Video, Cinema Studio, …)
 - tabs you can dock side by side
 - saved workspaces
 - Cinema Studio project folders for your downloads
-- alerts when a generation finishes
+- alerts when a generation finishes, and an optional auto-download of finished generations
 - a tray icon
 - configurable hotkeys
 
@@ -15,16 +16,18 @@ The site itself is untouched: you use Higgsfield exactly as in a browser.
 
 ## Install
 
-Pick one of the files in `dist\`:
+There are two builds of the app:
 
 | File | What it does |
 |---|---|
 | `Higgsfield Setup <version>.exe` | Installs for your Windows user and adds Desktop and Start Menu shortcuts. No admin rights needed. |
 | `Higgsfield-Portable-<version>.exe` | Runs without installing. |
 
+Download one from the repository's **Releases** page when a release is published, or build both yourself with `npm run dist` (see [Development](#development)). A build puts them in `dist\`.
+
 The app is not code-signed, so the first time you run it Windows SmartScreen shows "Windows protected your PC". Click **More info → Run anyway**.
 
-Your login is kept between launches.
+Your login is kept between launches. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 ## The window
 
@@ -83,7 +86,7 @@ A workspace is a named snapshot of your tabs and splits, like Layouts in Unity o
 
 ### Cinema Studio projects and downloads
 
-- **The Download button.** When you press Download on Higgsfield, the file is saved straight to `Downloads\Higgsfield`, with no Save dialog. A file never replaces an older one: a second `image.png` becomes `image (1).png`.
+- **The Download button.** When you press Download on Higgsfield, the file is saved straight to `Downloads\Higgsfield`, with no Save dialog. A file never replaces an older one: a second `image.png` becomes `image (1).png`. The app never downloads anything on its own unless you turn on **Download finished generations** (below).
 - **Project folders.** When a tab is inside a **Cinema Studio project**, files you download from that tab go into a folder named after the project, for example `Downloads\Higgsfield\Nike spot\`. The app recognises the project on its own; there is nothing to set up.
 - **Project chip.** When the current tab is in a project, the toolbar shows the project's name. Click it to:
   - open the project's folder
@@ -196,17 +199,17 @@ main.js                     Entry point: windows, IPC, link rules, context menu,
 src/main/settings.js        Settings store (settings.json)
 src/main/store.js           Reading and writing the JSON files in the profile folder
 src/main/hotkeys.js         App shortcuts (before-input-event on every tab) and the global shortcut
-src/main/downloads.js       Auto-save, unique file names, taskbar progress
+src/main/downloads.js       Where each download goes, Save without asking, unique file names, taskbar progress
 src/main/projects.js        Cinema Studio project detection and project folders
 src/main/workspaces.js      Saved workspaces
 src/main/viewport.js        Per-tab desktop-width layout and zoom (CDP device-metrics emulation)
-src/main/notify.js          Generation-finished detection and Windows notifications
+src/main/notify.js          Generation-finished detection, Windows notifications, finished files for auto-download
 src/main/cdp.js             One DevTools Protocol session per tab, shared by the two above
 src/main/tray.js            Tray icon and close-to-tray
 src/main/menu.js            Menu bar
 src/shared/actions.js       Which addresses are Higgsfield, its sections, every action and its default shortcut
 src/shared/keys.js          Shortcut parsing, display and validation (main + pages)
-src/renderer/shell/         Toolbar, tabs and docking (dockview-core, one <webview> per tab)
+src/renderer/shell/         Toolbar (section buttons, project chip, workspaces), tabs and docking (dockview-core, one <webview> per tab)
 src/renderer/settings/      Settings window
 src/preload/                Bridges between those pages and the main process
 build/icon.png              App icon
@@ -216,6 +219,8 @@ build/icon.png              App icon
 - **Docking.** Tabs use dockview's `renderer: 'always'` mode, which repositions a webview instead of moving it in the page, so dragging a tab never reloads it.
 - **Zoom.** Chromium zoom is shared by every tab on the same site, so per-tab zoom and the desktop layout in narrow panels use `Emulation.setDeviceMetricsOverride` on each tab instead. Clicks and scrolling map through it correctly.
 - **Generation alerts.** They come from Higgsfield's job-status event stream (`fnf-notification/notifications/stream`, event `job:status_changed`) and its `jobs/status-batch` poll. The app applies the site's own rule for "finished": `completed` once the IP check is done; `failed`, `nsfw`, `ip_detected`.
+- **Download finished generations.** When a job the app saw start finishes as `completed`, the app saves its full-size file (`results.raw.url`, the same file the site's Download button fetches) through the tab that started it, so it lands in that tab's folder.
+- **Download button.** The site fetches the file and saves it as a normal browser download. The app decides where it goes from the tab it came from.
 - **Cinema Studio projects.** They are recognised from the tab's address: `/generate?projectId=<id>` or `/generate/@user/<project>`.
 
 ## License
