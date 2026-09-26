@@ -4,10 +4,7 @@ const { Tray, Menu, nativeImage } = require('electron');
 
 let tray = null;
 let settings;
-let getWindow = () => null;
-let onNewTab = () => {};
-let onOpenDownloads = () => {};
-let onQuit = () => {};
+let getWindow;
 let quitting = false;
 
 function showWindow() {
@@ -25,25 +22,21 @@ function toggleWindow() {
   else showWindow();
 }
 
+// opts: { settings, icon, getWindow(), onNewTab(), onOpenDownloads(), onQuit() }
 function init(opts) {
-  settings = opts.settings;
-  if (typeof opts.getWindow === 'function') getWindow = opts.getWindow;
-  if (typeof opts.onNewTab === 'function') onNewTab = opts.onNewTab;
-  if (typeof opts.onOpenDownloads === 'function') onOpenDownloads = opts.onOpenDownloads;
-  if (typeof opts.onQuit === 'function') onQuit = opts.onQuit;
+  ({ settings, getWindow } = opts);
 
   const image = nativeImage.createFromPath(opts.icon).resize({ width: 32, height: 32, quality: 'best' });
   tray = new Tray(image);
   tray.setToolTip('Higgsfield');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show Higgsfield', click: () => showWindow() },
-    { label: 'New tab', click: () => onNewTab() },
-    { label: 'Open downloads folder', click: () => onOpenDownloads() },
+    { label: 'Show Higgsfield', click: showWindow },
+    { label: 'New tab', click: opts.onNewTab },
+    { label: 'Open downloads folder', click: opts.onOpenDownloads },
     { type: 'separator' },
-    { label: 'Quit Higgsfield', click: () => onQuit() },
+    { label: 'Quit Higgsfield', click: opts.onQuit },
   ]));
-  tray.on('click', () => toggleWindow());
-  return tray;
+  tray.on('click', toggleWindow);
 }
 
 function handleClose(event) {

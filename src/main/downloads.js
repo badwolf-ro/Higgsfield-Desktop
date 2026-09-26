@@ -5,12 +5,11 @@ const { dialog, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-let session;
+// Set by init(). getFolder(webContents): where a download started in that page goes.
 let settings;
-let getWindow = () => null;
-// Where a download started in `webContents` goes; see init().
-let getFolder = () => settings.get().downloads.folder;
-let onSaved = () => {};
+let getWindow;
+let getFolder;
+let onSaved;
 
 // URL -> pending count, so the same file downloaded twice is still matched.
 const saveUrls = new Map();
@@ -99,7 +98,7 @@ function onWillDownload(_event, item, webContents) {
   if (isSaveAs || (!isSave && !autoSave)) {
     item.setSaveDialogOptions({ defaultPath: path.join(folder, filename) });
   } else {
-    try { fs.mkdirSync(folder, { recursive: true }); } catch { /* dialog fallback below */ }
+    try { fs.mkdirSync(folder, { recursive: true }); } catch { /* e.g. a disconnected drive: the download then fails */ }
     item.setSavePath(uniqueFilePath(folder, filename));
   }
 
@@ -117,12 +116,8 @@ function onWillDownload(_event, item, webContents) {
 }
 
 function init(opts) {
-  session = opts.session;
-  settings = opts.settings;
-  if (typeof opts.getWindow === 'function') getWindow = opts.getWindow;
-  if (typeof opts.getFolder === 'function') getFolder = opts.getFolder;
-  if (typeof opts.onSaved === 'function') onSaved = opts.onSaved;
-  session.on('will-download', onWillDownload);
+  ({ settings, getWindow, getFolder, onSaved } = opts);
+  opts.session.on('will-download', onWillDownload);
 }
 
 function save(webContents, url) {
@@ -148,7 +143,4 @@ function chooseFolder(parentWindow) {
   return promise.then(r => (r.canceled || !r.filePaths.length ? null : r.filePaths[0]));
 }
 
-module.exports = {
-  init, save, saveAs, openFolder, chooseFolder,
-  sanitizeFilename, extensionForMime, withExtension, uniqueFilePath,
-};
+module.exports = { init, save, saveAs, openFolder, chooseFolder };

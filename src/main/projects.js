@@ -5,29 +5,28 @@
 // Emits 'change' (list) when a project is added, renamed, moved or forgotten.
 const { app } = require('electron');
 const { EventEmitter } = require('events');
-const fs = require('fs');
 const path = require('path');
+const { readJson, writeJson, cleanName } = require('./store');
+const { HOME, isSite } = require('../shared/actions');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MAX_NAME = 60;
 // Higgsfield rewrites /generate?projectId=<id> to /generate/@user/<slug>;
 // a slug page seen this soon after an id page in the same tab is the same project.
 const CANONICAL_REDIRECT_MS = 15000;
 
 // The Cinema Studio project a URL is in, or null.
 function detect(url) {
-  let u;
-  try { u = new URL(url); } catch { return null; }
-  if (u.protocol !== 'https:' || !/(^|\.)higgsfield\.ai$/.test(u.hostname)) return null;
+  if (!isSite(url)) return null;
+  const u = new URL(url);
   const slug = u.pathname.match(/^\/generate\/(@[^/]+\/[^/]+)/);
   if (slug) {
     const s = decodeURIComponent(slug[1]);
-    return { key: 'slug:' + s, slug: s, id: null, url: `https://higgsfield.ai/generate/${slug[1]}` };
+    return { key: 'slug:' + s, slug: s, id: null, url: `${HOME}generate/${slug[1]}` };
   }
   if (!/^\/generate\/?$/.test(u.pathname)) return null;
   const id = u.searchParams.get('projectId') || u.searchParams.get('cinematic-project-id');
   if (!id || !UUID.test(id)) return null;
-  return { key: 'id:' + id.toLowerCase(), slug: null, id: id.toLowerCase(), url: `https://higgsfield.ai/generate?projectId=${id}` };
+  return { key: 'id:' + id.toLowerCase(), slug: null, id: id.toLowerCase(), url: `${HOME}generate?projectId=${id}` };
 }
 
 // "@wolf/nike-spot-2" -> "Nike spot 2"
@@ -36,11 +35,7 @@ function nameFromSlug(slug) {
   return words ? words[0].toUpperCase() + words.slice(1) : 'Cinema Studio project';
 }
 
-function cleanName(name) {
-  return String(name || '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
-}
-
-// A project name as a Windows folder name. Same rule as the Settings page preview.
+// A project name as a Windows folder name.
 function folderName(name) {
   const safe = String(name).replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').replace(/[. ]+$/, '').trim();
   return safe || 'Project';
@@ -50,7 +45,7 @@ class Projects extends EventEmitter {
   constructor() {
     super();
     this.items = [];
-    this.getRoot = () => app.getPath('downloads');
+    this.getRoot = null;
   }
 
   get file() {
@@ -59,20 +54,13 @@ class Projects extends EventEmitter {
 
   // getRoot(): the download folder from Settings.
   load({ getRoot }) {
-    if (getRoot) this.getRoot = getRoot;
-    try {
-      const data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      if (Array.isArray(data.items)) this.items = data.items.filter(p => p && p.key && p.name);
-    } catch { /* none yet */ }
+    this.getRoot = getRoot;
+    const data = readJson(this.file);
+    if (data && Array.isArray(data.items)) this.items = data.items.filter(p => p && p.key && p.name);
   }
 
   save() {
-    try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(this.file, JSON.stringify({ items: this.items }));
-    } catch (err) {
-      console.error('Could not save projects:', err);
-    }
+    writeJson(this.file, { items: this.items });
   }
 
   changed() {
@@ -117,7 +105,6 @@ class Projects extends EventEmitter {
       if (project) {
         project.key = found.key;
         project.url = found.url;
-        project.slug = found.slug;
         if (!project.customName) project.name = nameFromSlug(found.slug);
         isNew = true;
       }
@@ -126,7 +113,6 @@ class Projects extends EventEmitter {
       project = {
         key: found.key,
         id: found.id,
-        slug: found.slug,
         url: found.url,
         name: found.slug ? nameFromSlug(found.slug) : 'Cinema Studio project',
         customName: false,
@@ -151,7 +137,7 @@ class Projects extends EventEmitter {
     this.changed();
   }
 
-  // The operations below return { ok: true, project } or { ok: false, error }.
+  // The operations below return { ok: true } or { ok: false, error }.
 
   rename(key, name) {
     const project = this.get(key);
@@ -161,7 +147,7 @@ class Projects extends EventEmitter {
     project.name = clean;
     project.customName = true;
     this.changed();
-    return { ok: true, project };
+    return { ok: true };
   }
 
   // folder null = back to "<download folder>\<project name>".
@@ -171,7 +157,7 @@ class Projects extends EventEmitter {
     if (folder && !path.isAbsolute(folder)) return { ok: false, error: 'Choose a full folder path.' };
     project.downloadFolder = folder || null;
     this.changed();
-    return { ok: true, project };
+    return { ok: true };
   }
 
   // Forgets it in the app only; nothing is deleted on Higgsfield or on disk.
@@ -180,10 +166,8 @@ class Projects extends EventEmitter {
     if (!project) return { ok: false, error: 'That project is no longer in the list.' };
     this.items = this.items.filter(p => p !== project);
     this.changed();
-    return { ok: true, project };
+    return { ok: true };
   }
 }
 
 module.exports = new Projects();
-module.exports.detect = detect;
-module.exports.nameFromSlug = nameFromSlug;

@@ -1,10 +1,21 @@
-// Site sections and every action that can have a keyboard shortcut.
-// Shared by the main process (require) and renderer pages (window.HFActions).
+// Which addresses belong to Higgsfield, its sections, and every action that can
+// have a keyboard shortcut. Shared by the main process (require) and renderer
+// pages (window.HFActions).
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.HFActions = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   const HOME = 'https://higgsfield.ai/';
+  const PARTITION = 'persist:higgsfield'; // one login for every tab, kept between launches
+
+  // Hosts (and their subdomains) that belong to Higgsfield; images.higgs.ai serves its images.
+  const SITE_HOSTS = ['higgsfield.ai', 'higgs.ai'];
+
+  function isSite(url) {
+    let u;
+    try { u = new URL(url); } catch { return false; }
+    return u.protocol === 'https:' && SITE_HOSTS.some(h => u.hostname === h || u.hostname.endsWith('.' + h));
+  }
 
   const SECTIONS = [
     { id: 'explore', label: 'Explore', url: HOME },
@@ -19,6 +30,7 @@
     { id: 'community', label: 'Community', url: HOME + 'community' },
   ];
 
+  // label: the name within its group; title: the name on its own.
   // handler 'shell': the main process forwards { type: id } to the tab UI.
   // handler 'main':  the main process runs it itself.
   // global: registered system-wide, works while another app is focused.
@@ -38,13 +50,11 @@
     { id: 'home', group: 'Navigation', label: 'Home', hotkey: 'Alt+Home', handler: 'shell' },
 
     ...SECTIONS.map(s => ({
-      id: 'open:' + s.id, group: 'Open in new tab', label: s.label, hotkey: '', handler: 'main', url: s.url,
+      id: 'open:' + s.id, group: 'Open in new tab', label: s.label, title: `Open ${s.label} in new tab`,
+      hotkey: '', handler: 'main', url: s.url,
     })),
 
     { id: 'saveWorkspace', group: 'Workspaces', label: 'Save workspace…', hotkey: '', handler: 'main' },
-    ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({
-      id: 'workspace:' + n, group: 'Workspaces', label: 'Load workspace ' + n, hotkey: '', handler: 'main',
-    })),
 
     { id: 'zoomIn', group: 'View', label: 'Zoom in', hotkey: 'Ctrl+=', handler: 'shell' },
     { id: 'zoomOut', group: 'View', label: 'Zoom out', hotkey: 'Ctrl+-', handler: 'shell' },
@@ -61,7 +71,9 @@
     { id: 'toggleWindow', group: 'From any app', label: 'Show or hide Higgsfield', hotkey: 'Ctrl+Alt+H', handler: 'main', global: true },
   ];
 
+  for (const action of ACTIONS) action.title = action.title || action.label;
+
   const byId = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
 
-  return { HOME, SECTIONS, ACTIONS, byId };
+  return { HOME, PARTITION, isSite, SECTIONS, ACTIONS, byId };
 });

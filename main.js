@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, shell, clipboard, screen, session, dialog, ipcMain, webContents } = require('electron');
 const path = require('path');
-const fs = require('fs');
+const store = require('./src/main/store');
 const settings = require('./src/main/settings');
 const hotkeys = require('./src/main/hotkeys');
 const downloads = require('./src/main/downloads');
@@ -10,21 +10,18 @@ const viewport = require('./src/main/viewport');
 const workspaces = require('./src/main/workspaces');
 const projects = require('./src/main/projects');
 const menu = require('./src/main/menu');
-const { HOME, SECTIONS, ACTIONS, byId } = require('./src/shared/actions');
+const { PARTITION, isSite, SECTIONS, byId } = require('./src/shared/actions');
 
 // A separate profile folder for testing and development (also gets its own
 // single-instance lock, so it can run next to the everyday app).
 if (process.env.HIGGSFIELD_PROFILE) app.setPath('userData', process.env.HIGGSFIELD_PROFILE);
 
-const PARTITION = 'persist:higgsfield'; // keeps login cookies between launches
+const BACKGROUND = '#0f1113';
 const ICON = path.join(__dirname, 'build', 'icon.png');
 const SHELL_PAGE = path.join(__dirname, 'src', 'renderer', 'shell', 'index.html');
 const SETTINGS_PAGE = path.join(__dirname, 'src', 'renderer', 'settings', 'index.html');
 const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
-const LAYOUT_FILE = path.join(app.getPath('userData'), 'layout.json'); // before projects existed
-
-// Hosts (and their subdomains) that belong to Higgsfield itself.
-const SITE_HOSTS = ['higgsfield.ai', 'higgs.ai'];
+const LAYOUT_FILE = path.join(app.getPath('userData'), 'layout.json');
 
 // Sign-in and payment pages that must open inside the app so the flow
 // can hand the session back to Higgsfield. Paths narrow hosts that also
@@ -46,12 +43,6 @@ function parse(url) {
   try { return new URL(url); } catch { return null; }
 }
 
-function isSite(url) {
-  const u = parse(url);
-  return !!u && u.protocol === 'https:' &&
-    SITE_HOSTS.some(h => u.hostname === h || u.hostname.endsWith('.' + h));
-}
-
 function isFlow(url) {
   const u = parse(url);
   return !!u && u.protocol === 'https:' &&
@@ -68,16 +59,8 @@ function cleanUserAgent(ua) {
   return ua.replace(/\s(?!(?:AppleWebKit|Chrome|Safari)\/)[^\s/()]+\/\S+/g, '');
 }
 
-function readJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
-}
-
-function writeJson(file, data) {
-  try { fs.writeFileSync(file, JSON.stringify(data)); } catch { /* not worth failing over */ }
-}
-
 function loadWindowState() {
-  const s = readJson(STATE_FILE);
+  const s = store.readJson(STATE_FILE);
   if (!s) return { width: 1440, height: 900 };
   const onScreen = screen.getAllDisplays().some(({ workArea: a }) =>
     s.x < a.x + a.width && s.x + s.width > a.x && s.y < a.y + a.height && s.y + s.height > a.y);
@@ -87,8 +70,9 @@ function loadWindowState() {
 
 let mainWindow = null;
 let settingsWindow = null;
-let openTabs = []; // latest list from the tab UI, see SPEC 'tabs-changed'
+let openTabs = []; // from the tab UI, in layout order: { webContentsId, title, active, visible }
 let currentLayout = null; // the tab UI's live layout, autosaved to layout.json
+let savedLayoutJson = ''; // what layout.json holds, so unchanged layouts are not rewritten
 let generating = 0;
 const savedFiles = new Set(); // downloads the tab UI may reveal in Explorer
 const tabProjects = new Map(); // tab webContentsId -> { key, at }: the Cinema Studio project it is in
@@ -99,8 +83,13 @@ function sendCommand(command, { reveal = true } = {}) {
   mainWindow.webContents.send('shell:command', command);
 }
 
-function toast(text) {
-  sendCommand({ type: 'toast', text }, { reveal: false });
+// filePath: a saved file the toast offers to show in Explorer.
+function toast(text, filePath) {
+  sendCommand({ type: 'toast', text, filePath }, { reveal: false });
+}
+
+function sendToSettings(channel, value) {
+  if (settingsWindow) settingsWindow.webContents.send(channel, value);
 }
 
 // Asks for a line of text in a dialog drawn by the tab UI.
@@ -144,9 +133,14 @@ async function saveWorkspace() {
 function loadWorkspace(id) {
   const ws = workspaces.get(id);
   if (!ws) return { ok: false, error: 'That workspace no longer exists.' };
-  sendCommand({ type: 'loadLayout', layout: ws.layout, token: 1 });
+  sendCommand({ type: 'loadLayout', layout: ws.layout });
   toast(`Workspace "${ws.name}" loaded`);
-  return { ok: true, workspace: ws };
+  return { ok: true };
+}
+
+// What the tab UI's Workspace menu lists.
+function workspaceSummaries() {
+  return workspaces.list().map(({ id, name }) => ({ id, name }));
 }
 
 // The Cinema Studio project the active tab is in, or null.
@@ -168,7 +162,7 @@ function showActiveProject() {
 }
 
 function recentProjects() {
-  return projects.list().slice(0, 10).map(({ key, name }) => ({ key, name }));
+  return projects.list().slice(0, 10).map(({ key, name, url }) => ({ key, name, url }));
 }
 
 // Called whenever a tab changes page.
@@ -218,6 +212,11 @@ async function chooseProjectFolder(key) {
   return folder ? projects.setFolder(key, folder) : { ok: true };
 }
 
+// The site sections shown as toolbar buttons, in the site's own order.
+function quickSections(ids = settings.get().toolbar.sections) {
+  return Array.isArray(ids) ? SECTIONS.map(s => s.id).filter(id => ids.includes(id)) : [];
+}
+
 function setLocked(locked) {
   settings.update({ layout: { locked: !!locked } });
 }
@@ -227,11 +226,6 @@ function dispatch(id) {
   if (!action) return;
   if (action.handler === 'shell') return sendCommand({ type: id });
   if (id.startsWith('open:')) return sendCommand({ type: 'newTab', url: action.url });
-  if (id.startsWith('workspace:')) {
-    const ws = workspaces.list()[Number(id.slice(10)) - 1];
-    if (ws) loadWorkspace(ws.id);
-    return;
-  }
   switch (id) {
     case 'saveWorkspace': saveWorkspace(); break;
     case 'toggleLock': setLocked(!settings.get().layout.locked); break;
@@ -254,16 +248,16 @@ let menuTimer = null;
 function refreshMenu() {
   clearTimeout(menuTimer);
   menuTimer = setTimeout(() => {
+    const { hotkeys: binds, layout } = settings.get();
     Menu.setApplicationMenu(menu.build({
       dispatch,
-      accelerator: id => hotkeys.menuAccelerator(id),
+      accelerator: id => binds[id] || undefined,
       sendCommand,
       openSettings,
       clearAllData,
-      tabs: openTabs,
       workspaces: workspaces.list(),
       loadWorkspace,
-      locked: settings.get().layout.locked,
+      locked: layout.locked,
     }));
   }, 150);
 }
@@ -282,9 +276,11 @@ function formatBytes(n) {
 async function clearCache() {
   const ses = session.fromPartition(PARTITION);
   const size = await ses.getCacheSize();
-  await ses.clearCache();
-  await ses.clearCodeCaches({});
-  await ses.clearStorageData({ storages: ['cachestorage', 'serviceworkers', 'shadercache'] });
+  await Promise.all([
+    ses.clearCache(),
+    ses.clearCodeCaches({}),
+    ses.clearStorageData({ storages: ['cachestorage', 'serviceworkers', 'shadercache'] }),
+  ]);
   sendCommand({ type: 'reloadAll' }, { reveal: false });
   showMessage({
     type: 'info',
@@ -307,9 +303,7 @@ async function clearAllData() {
   });
   if (response !== 0) return;
   const ses = session.fromPartition(PARTITION);
-  await ses.clearStorageData();
-  await ses.clearCache();
-  await ses.clearAuthCache();
+  await Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache()]);
   sendCommand({ type: 'reloadAll' });
 }
 
@@ -378,7 +372,7 @@ function wirePage(contents) {
     if (url === 'about:blank' || isFlow(url)) {
       return {
         action: 'allow',
-        overrideBrowserWindowOptions: { icon: ICON, backgroundColor: '#0f1113', autoHideMenuBar: true },
+        overrideBrowserWindowOptions: { icon: ICON, backgroundColor: BACKGROUND, autoHideMenuBar: true },
       };
     }
     openExternal(url);
@@ -418,7 +412,7 @@ function createMainWindow() {
     minHeight: 600,
     title: 'Higgsfield',
     icon: ICON,
-    backgroundColor: '#0f1113',
+    backgroundColor: BACKGROUND,
     autoHideMenuBar: autoHide,
     show: false,
     webPreferences: {
@@ -455,7 +449,7 @@ function createMainWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('focus', () => mainWindow.flashFrame(false));
   mainWindow.on('close', event => {
-    writeJson(STATE_FILE, { ...mainWindow.getNormalBounds(), maximized: mainWindow.isMaximized() });
+    store.writeJson(STATE_FILE, { ...mainWindow.getNormalBounds(), maximized: mainWindow.isMaximized() });
     tray.handleClose(event);
   });
   mainWindow.on('closed', () => { mainWindow = null; });
@@ -484,7 +478,7 @@ function openSettings(section = 'general') {
     parent: mainWindow || undefined,
     title: 'Higgsfield Settings',
     icon: ICON,
-    backgroundColor: '#0f1113',
+    backgroundColor: BACKGROUND,
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -503,6 +497,25 @@ function openSettings(section = 'general') {
   settingsWindow.loadFile(SETTINGS_PAGE, { query: { section } });
 }
 
+// A tab of the main window, by its webContents id.
+function isTab(id) {
+  const contents = Number.isInteger(id) ? webContents.fromId(id) : null;
+  return !!contents && contents.getType() === 'webview' && !!mainWindow
+    && contents.hostWebContents === mainWindow.webContents;
+}
+
+// Used by the Settings page's Workspaces list.
+function workspaceOp(op, args) {
+  const a = args && typeof args === 'object' ? args : {};
+  switch (op) {
+    case 'load': return loadWorkspace(a.id);
+    case 'rename': return workspaces.rename(a.id, a.name);
+    case 'delete': return workspaces.remove(a.id);
+    default: return { ok: false, error: 'Unknown workspace operation.' };
+  }
+}
+
+// Each page may only use its own channels; a message from anywhere else is ignored.
 function fromShell(event) {
   return !!mainWindow && event.sender === mainWindow.webContents;
 }
@@ -511,141 +524,91 @@ function fromSettings(event) {
   return !!settingsWindow && event.sender === settingsWindow.webContents;
 }
 
-// A tab of the main window, by its webContents id.
-function isTab(id) {
-  const contents = Number.isInteger(id) ? webContents.fromId(id) : null;
-  return !!contents && contents.getType() === 'webview' && !!mainWindow
-    && contents.hostWebContents === mainWindow.webContents;
+function on(allowed, channel, fn) {
+  ipcMain.on(channel, (event, ...args) => { if (allowed(event)) fn(...args); });
 }
 
-// Shared by the Settings page and the tab UI's Workspace menu.
-function workspaceOp(op, args) {
-  const a = args && typeof args === 'object' ? args : {};
-  switch (op) {
-    case 'save': return workspaces.create(a.name, currentLayout);
-    case 'replace': return workspaces.replace(a.id, currentLayout);
-    case 'load': return loadWorkspace(a.id);
-    case 'rename': return workspaces.rename(a.id, a.name);
-    case 'delete': return workspaces.remove(a.id);
-    case 'move': return workspaces.move(a.id, a.delta);
-    default: return { ok: false, error: 'Unknown workspace operation.' };
-  }
+function handle(allowed, channel, fn) {
+  ipcMain.handle(channel, (event, ...args) => (allowed(event) ? fn(...args) : null));
 }
 
 function registerIpc() {
-  ipcMain.handle('shell:get-initial-state', event => {
-    if (!fromShell(event)) return null;
-    return {
-      home: HOME,
-      sections: SECTIONS,
-      layout: currentLayout,
-      layoutToken: 1,
-      csProjects: recentProjects(),
-      partition: PARTITION,
-      workspaces: workspaces.list().map(({ id, name }) => ({ id, name })),
-      locked: settings.get().layout.locked,
-      generating,
-    };
-  });
-  ipcMain.on('shell:save-layout', (event, payload) => {
-    if (!fromShell(event) || !payload || typeof payload !== 'object') return;
-    const tagged = 'token' in payload && 'layout' in payload;
-    const layout = tagged ? payload.layout : payload;
+  handle(fromShell, 'shell:get-initial-state', () => ({
+    layout: currentLayout,
+    csProjects: recentProjects(),
+    workspaces: workspaceSummaries(),
+    locked: settings.get().layout.locked,
+    quickSections: quickSections(),
+    generating,
+  }));
+  on(fromShell, 'shell:save-layout', layout => {
     if (!layout || typeof layout !== 'object') return;
     currentLayout = layout;
-    writeJson(LAYOUT_FILE, layout);
+    const json = JSON.stringify(layout);
+    if (json === savedLayoutJson) return;
+    savedLayoutJson = json;
+    store.writeJson(LAYOUT_FILE, layout);
   });
-  ipcMain.on('shell:project', (event, r) => {
-    if (!fromShell(event) || !r) return;
-    if (r.op === 'openFolder') dispatch('openDownloads');
-    else if (r.op === 'rename') renameActiveProject();
-    else if (r.op === 'all') sendCommand({ type: 'newTab', url: HOME + 'generate?view=projects' });
-    else if (r.op === 'open' && r.args) projectOp('open', r.args);
-    else if (r.op === 'manage') openSettings('projects');
+  on(fromShell, 'shell:project', op => {
+    if (op === 'openFolder') dispatch('openDownloads');
+    else if (op === 'rename') renameActiveProject();
   });
-  ipcMain.on('shell:viewport', (event, v) => {
-    if (fromShell(event) && v && isTab(v.webContentsId)) viewport.update(v.webContentsId, v);
+  on(fromShell, 'shell:viewport', v => {
+    if (v && isTab(v.webContentsId)) viewport.update(v.webContentsId, v);
   });
-  ipcMain.on('shell:prompt-result', (event, r) => {
-    if (!fromShell(event) || !r) return;
-    const resolve = pendingPrompts.get(r.requestId);
+  on(fromShell, 'shell:prompt-result', r => {
+    const resolve = r && pendingPrompts.get(r.requestId);
     if (!resolve) return;
     pendingPrompts.delete(r.requestId);
     resolve(typeof r.value === 'string' && r.value.trim() ? r.value.trim() : null);
   });
-  ipcMain.on('shell:workspace', (event, r) => {
-    if (!fromShell(event) || !r) return;
+  on(fromShell, 'shell:workspace', r => {
+    if (!r) return;
     if (r.op === 'save') saveWorkspace();
     else if (r.op === 'manage') openSettings('workspaces');
-    else if (r.op === 'reset') sendCommand({ type: 'resetLayout' });
     else if (r.op === 'load' && r.args) loadWorkspace(r.args.id);
   });
-  ipcMain.on('shell:set-locked', (event, locked) => {
-    if (fromShell(event)) setLocked(locked);
-  });
-  ipcMain.on('shell:tabs-changed', (event, tabs) => {
-    if (!fromShell(event) || !Array.isArray(tabs)) return;
+  on(fromShell, 'shell:set-locked', setLocked);
+  on(fromShell, 'shell:set-quick-sections', ids => settings.update({ toolbar: { sections: quickSections(ids) } }));
+  on(fromShell, 'shell:tabs-changed', tabs => {
+    if (!Array.isArray(tabs)) return;
     openTabs = tabs.map(t => ({
       webContentsId: Number.isInteger(t.webContentsId) ? t.webContentsId : null,
       title: String(t.title || ''),
-      url: String(t.url || ''),
       active: !!t.active,
       visible: !!t.visible,
     }));
     showActiveProject();
-    refreshMenu();
   });
-  ipcMain.on('shell:show-in-folder', (event, filePath) => {
-    if (fromShell(event) && savedFiles.has(filePath)) shell.showItemInFolder(filePath);
+  on(fromShell, 'shell:show-in-folder', filePath => {
+    if (savedFiles.has(filePath)) shell.showItemInFolder(filePath);
   });
 
-  ipcMain.handle('settings:get-state', event => {
-    if (!fromSettings(event)) return null;
-    return {
-      settings: settings.get(),
-      actions: ACTIONS,
-      defaults: settings.defaults(),
-      workspaces: workspaces.list(),
-      projects: { root: settings.get().downloads.folder, items: projects.list() },
-    };
-  });
-  ipcMain.handle('settings:project', async (event, op, args) => {
-    if (!fromSettings(event)) return { ok: false, error: 'Not allowed.' };
+  handle(fromSettings, 'settings:get-state', () => ({
+    settings: settings.get(),
+    workspaces: workspaces.list(),
+    projects: projects.list(),
+  }));
+  handle(fromSettings, 'settings:project', async (op, args) => {
     const result = op === 'chooseFolder'
       ? await chooseProjectFolder(args && args.key)
       : projectOp(String(op), args);
-    const { project: _p, ...rest } = result;
-    return { ...rest, projects: { root: settings.get().downloads.folder, items: projects.list() } };
+    return { ...result, projects: projects.list() };
   });
-  ipcMain.handle('settings:workspace', (event, op, args) => {
-    if (!fromSettings(event)) return { ok: false, error: 'Not allowed.' };
-    const result = workspaceOp(String(op), args);
-    const { workspace: _ws, ...rest } = result;
-    return { ...rest, workspaces: workspaces.list() };
+  handle(fromSettings, 'settings:workspace', (op, args) => {
+    const { workspace: _ws, ...result } = workspaceOp(String(op), args); // its layout stays here
+    return { ...result, workspaces: workspaces.list() };
   });
-  ipcMain.handle('settings:update', (event, patch) => {
-    if (!fromSettings(event) || !patch || typeof patch !== 'object') return settings.get();
+  handle(fromSettings, 'settings:update', patch => {
+    if (!patch || typeof patch !== 'object') return settings.get();
     const { hotkeys: _ignored, ...rest } = patch; // shortcuts go through set-hotkey validation
     return settings.update(rest);
   });
-  ipcMain.handle('settings:set-hotkey', (event, id, accelerator) => {
-    if (!fromSettings(event)) return { ok: false, error: 'Not allowed.' };
-    return hotkeys.setHotkey(String(id), String(accelerator || ''));
-  });
-  ipcMain.handle('settings:reset-hotkeys', event => {
-    if (!fromSettings(event)) return settings.get();
-    return hotkeys.resetHotkeys();
-  });
-  ipcMain.handle('settings:choose-folder', event => {
-    if (!fromSettings(event)) return null;
-    return downloads.chooseFolder(settingsWindow);
-  });
-  ipcMain.on('settings:open-folder', event => {
-    if (fromSettings(event)) downloads.openFolder(settings.get().downloads.folder);
-  });
-  ipcMain.on('settings:recording', (event, recording) => {
-    if (fromSettings(event)) hotkeys.suspendGlobal(!!recording);
-  });
+  handle(fromSettings, 'settings:set-hotkey', (id, accelerator) => hotkeys.setHotkey(String(id), String(accelerator || '')));
+  handle(fromSettings, 'settings:reset-hotkeys', () => hotkeys.resetHotkeys());
+  handle(fromSettings, 'settings:choose-folder', () => downloads.chooseFolder(settingsWindow));
+  on(fromSettings, 'settings:open-folder', () => downloads.openFolder(settings.get().downloads.folder));
+  on(fromSettings, 'settings:recording', recording => hotkeys.suspendGlobal(!!recording));
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -668,7 +631,8 @@ if (!app.requestSingleInstanceLock()) {
     settings.load();
     workspaces.load();
     projects.load({ getRoot: () => settings.get().downloads.folder });
-    currentLayout = readJson(LAYOUT_FILE);
+    currentLayout = store.readJson(LAYOUT_FILE);
+    savedLayoutJson = JSON.stringify(currentLayout);
     const ses = session.fromPartition(PARTITION);
 
     // Only Higgsfield and its sign-in/payment pages get camera, mic, clipboard, notifications.
@@ -677,11 +641,7 @@ if (!app.requestSingleInstanceLock()) {
       callback(isSite(url) || isFlow(url));
     });
 
-    hotkeys.init({
-      settings,
-      dispatch,
-      shouldHandle: contents => !settingsWindow || contents !== settingsWindow.webContents,
-    });
+    hotkeys.init({ settings, dispatch });
 
     downloads.init({
       session: ses,
@@ -692,7 +652,7 @@ if (!app.requestSingleInstanceLock()) {
         savedFiles.add(filePath);
         const project = projects.list().find(p => path.dirname(filePath) === p.downloadFolder);
         const where = project ? ` to ${project.name}` : '';
-        sendCommand({ type: 'toast', text: `Saved ${filename}${where}`, filePath }, { reveal: false });
+        toast(`Saved ${filename}${where}`, filePath);
       },
     });
 
@@ -711,6 +671,10 @@ if (!app.requestSingleInstanceLock()) {
       getWindow: () => mainWindow,
       getTab: id => openTabs.find(t => t.webContentsId === id) || null,
       onFolderRenamed: (id, name) => projects.renamedOnHiggsfield(id, name),
+      // Only generations started in a tab that is still open, so the file goes to that tab's folder.
+      onFileReady: (id, url) => {
+        if (settings.get().downloads.autoDownload && isTab(id)) downloads.save(webContents.fromId(id), url);
+      },
       onClick: id => {
         tray.showWindow();
         sendCommand({ type: 'focusTab', webContentsId: id });
@@ -732,31 +696,28 @@ if (!app.requestSingleInstanceLock()) {
     projects.on('change', list => {
       sendCommand({ type: 'csProjects', items: recentProjects() }, { reveal: false });
       showActiveProject();
-      if (settingsWindow) {
-        settingsWindow.webContents.send('settings:projects-changed', { root: settings.get().downloads.folder, items: list });
-      }
+      sendToSettings('settings:projects-changed', list);
     });
 
     workspaces.on('change', list => {
-      sendCommand({ type: 'workspaces', items: list.map(({ id, name }) => ({ id, name })) }, { reveal: false });
-      if (settingsWindow) settingsWindow.webContents.send('settings:workspaces-changed', list);
+      sendCommand({ type: 'workspaces', items: workspaceSummaries() }, { reveal: false });
+      sendToSettings('settings:workspaces-changed', list);
       refreshMenu();
     });
 
     settings.on('change', (snapshot, patch) => {
-      if (settingsWindow) settingsWindow.webContents.send('settings:changed', snapshot);
+      sendToSettings('settings:changed', snapshot);
       if (mainWindow && patch.menuBar) {
         mainWindow.setAutoHideMenuBar(snapshot.menuBar.autoHide);
         mainWindow.setMenuBarVisibility(!snapshot.menuBar.autoHide);
       }
-      if (patch.layout) {
-        viewport.refreshAll();
+      if (patch.layout && 'fitDesktop' in patch.layout) viewport.refreshAll();
+      if (patch.toolbar) sendCommand({ type: 'quickSections', ids: quickSections() }, { reveal: false });
+      if (patch.layout && 'locked' in patch.layout) {
         sendCommand({ type: 'setLocked', locked: snapshot.layout.locked }, { reveal: false });
       }
-      if (patch.downloads && settingsWindow) {
-        // Project folders are shown relative to the download folder.
-        settingsWindow.webContents.send('settings:projects-changed', { root: snapshot.downloads.folder, items: projects.list() });
-      }
+      // Projects without a folder of their own are saved inside the download folder.
+      if (patch.downloads) sendToSettings('settings:projects-changed', projects.list());
       if (patch.hotkeys || patch.layout) refreshMenu();
     });
 

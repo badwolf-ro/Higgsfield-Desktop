@@ -69,7 +69,42 @@ button {
   user-select: none;
 }
 
+/* Section buttons: Image, Video, Cinema Studio… (chosen with the ▾ after them) */
+.hf-quick {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hf-quick-button.hf-current {
+  background: var(--hf-surface-2);
+  color: var(--hf-text);
+}
+
+.hf-compact .hf-quick-button {
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+}
+
+.hf-compact .hf-quick-button span {
+  display: none;
+}
+
+.hf-quick-more {
+  width: 22px;
+  padding: 0;
+  margin-right: 4px;
+  justify-content: center;
+}
+
+.hf-quick-more .hf-icon {
+  width: 14px;
+  height: 14px;
+}
+
 .hf-project-chip {
+  min-width: 0;
   max-width: 320px;
   height: 26px;
   padding: 0 8px 0 9px;
@@ -141,7 +176,7 @@ button {
   color: var(--hf-accent);
 }
 
-/* ---------- workspace menu ---------- */
+/* ---------- toolbar and header menus ---------- */
 
 .hf-menu {
   position: fixed;
@@ -205,6 +240,15 @@ button {
 .hf-menu-item:disabled {
   color: var(--hf-muted);
   cursor: default;
+}
+
+.hf-menu-check {
+  margin-left: auto;
+  color: var(--hf-accent);
+}
+
+.hf-menu-item[aria-checked="false"] .hf-menu-check {
+  visibility: hidden;
 }
 
 .hf-menu-separator {

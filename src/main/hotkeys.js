@@ -1,93 +1,57 @@
 // Keyboard shortcuts. App-level shortcuts are matched in before-input-event on
-// each tab's webContents (not through menu accelerators, so the menu can show
-// them without Electron also handling them). The one global action is
-// registered system-wide with globalShortcut.
+// the tab UI and each tab's webContents (not through menu accelerators, so the
+// menu can show them without Electron also handling them). The one global
+// action is registered system-wide with globalShortcut.
 const { globalShortcut } = require('electron');
 const keys = require('../shared/keys');
 const { ACTIONS, byId } = require('../shared/actions');
 
 let settings;
-let dispatch = () => {};
-let shouldHandle = () => true;
-let onSettingsChange = null;
-let suspended = false;
+let dispatch;
+let suspended = false; // global shortcuts are off while the Settings page records one
 
 // Canonical accelerator -> actionId, for non-global actions only.
 const appMap = new Map();
 
-function rebuildAppMap() {
+// Rebuilds both kinds of shortcut from the settings.
+function apply() {
+  const binds = settings.get().hotkeys;
   appMap.clear();
-  const binds = settings.get().hotkeys;
+  globalShortcut.unregisterAll();
   for (const action of ACTIONS) {
-    if (action.global) continue;
     const accel = binds[action.id];
-    if (accel) appMap.set(accel, action.id);
-  }
-}
-
-// Reads the bindings back from settings each time, so register and unregister
-// always act on the same accelerators.
-function registerGlobals() {
-  if (suspended) return;
-  const binds = settings.get().hotkeys;
-  for (const action of ACTIONS) {
-    if (!action.global) continue;
-    const accel = binds[action.id];
-    if (accel && !keys.validate(accel, { global: true })) {
+    if (!accel) continue;
+    if (!action.global) appMap.set(accel, action.id);
+    else if (!suspended && !keys.validate(accel, { global: true })) {
       globalShortcut.register(accel, () => dispatch(action.id));
     }
   }
 }
 
-function unregisterGlobals() {
-  const binds = settings.get().hotkeys;
-  for (const action of ACTIONS) {
-    if (!action.global) continue;
-    const accel = binds[action.id];
-    if (accel) globalShortcut.unregister(accel);
-  }
-}
-
-function handleInput(wc, event, input) {
+function handleInput(event, input) {
   if (input.type !== 'keyDown' || input.isAutoRepeat) return;
-  const accel = keys.fromInput(input);
-  if (!accel) return;
-  const id = appMap.get(accel);
+  const id = appMap.get(keys.fromInput(input));
   if (!id) return;
-  if (!shouldHandle(wc)) return;
   event.preventDefault();
   dispatch(id);
 }
 
-function labelFor(action) {
-  return action.id.startsWith('open:') ? `Open ${action.label} in new tab` : action.label;
-}
-
 function init(opts) {
   settings = opts.settings;
-  if (typeof opts.dispatch === 'function') dispatch = opts.dispatch;
-  if (typeof opts.shouldHandle === 'function') shouldHandle = opts.shouldHandle;
-
-  rebuildAppMap();
-  registerGlobals();
-
-  // Any binding change (including our own) rebuilds the app-level lookup.
-  onSettingsChange = () => rebuildAppMap();
-  settings.on('change', onSettingsChange);
+  dispatch = opts.dispatch;
+  apply();
+  settings.on('change', (_snapshot, patch) => { if (patch.hotkeys) apply(); });
 }
 
 function attach(webContents) {
-  webContents.on('before-input-event', (event, input) => handleInput(webContents, event, input));
+  webContents.on('before-input-event', handleInput);
 }
 
 function setHotkey(actionId, accel) {
   const action = byId[actionId];
   if (!action) return { ok: false, error: 'Unknown action.' };
 
-  if (accel === '') {
-    if (action.global) unregisterGlobals();
-    return { ok: true, settings: settings.update({ hotkeys: { [actionId]: '' } }) };
-  }
+  if (accel === '') return { ok: true, settings: settings.update({ hotkeys: { [actionId]: '' } }) };
 
   const normalized = keys.normalize(accel);
   const invalid = keys.validate(normalized, { global: !!action.global });
@@ -95,47 +59,34 @@ function setHotkey(actionId, accel) {
 
   const binds = settings.get().hotkeys;
   for (const [otherId, otherAccel] of Object.entries(binds)) {
-    if (otherId !== actionId && otherAccel && otherAccel === normalized) {
-      return { ok: false, error: `Already used by "${labelFor(byId[otherId])}".` };
+    if (otherId !== actionId && otherAccel === normalized) {
+      return { ok: false, error: `Already used by "${byId[otherId].title}".` };
     }
   }
 
-  if (action.global) {
-    const old = binds[actionId];
-    if (old) globalShortcut.unregister(old);
-    const ok = suspended ? true : globalShortcut.register(normalized, () => dispatch(actionId));
-    if (!ok) {
-      if (old && !suspended) globalShortcut.register(old, () => dispatch(actionId));
+  // Registering is the only way to find out whether another app holds the shortcut.
+  if (action.global && normalized !== binds[actionId]) {
+    if (!globalShortcut.register(normalized, () => {})) {
       return { ok: false, error: 'Another app is already using this shortcut.' };
     }
+    globalShortcut.unregister(normalized);
   }
 
   return { ok: true, settings: settings.update({ hotkeys: { [actionId]: normalized } }) };
 }
 
 function resetHotkeys() {
-  unregisterGlobals();
-  const result = settings.update({ hotkeys: settings.defaults().hotkeys });
-  registerGlobals();
-  return result;
+  return settings.update({ hotkeys: settings.defaults().hotkeys });
 }
 
-function suspendGlobal(bool) {
-  if (bool === suspended) return;
-  suspended = !!bool;
-  if (suspended) unregisterGlobals();
-  else registerGlobals();
-}
-
-function menuAccelerator(actionId) {
-  if (!byId[actionId]) return undefined;
-  return settings.get().hotkeys[actionId] || undefined;
+function suspendGlobal(on) {
+  if (suspended === !!on) return;
+  suspended = !!on;
+  apply();
 }
 
 function dispose() {
-  unregisterGlobals();
-  if (onSettingsChange && settings) settings.removeListener('change', onSettingsChange);
-  onSettingsChange = null;
+  globalShortcut.unregisterAll();
 }
 
-module.exports = { init, attach, setHotkey, resetHotkeys, suspendGlobal, menuAccelerator, dispose };
+module.exports = { init, attach, setHotkey, resetHotkeys, suspendGlobal, dispose };

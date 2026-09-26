@@ -63,27 +63,12 @@
           <label class="row">
             <span class="row-text">
               <span class="row-title" id="t-fit">Keep Higgsfield's desktop layout in narrow panels</span>
-              <span class="row-desc" id="d-fit">A narrow panel shows the full desktop page scaled down, instead of
-                Higgsfield's cramped mobile layout.</span>
+              <span class="row-desc" id="d-fit">A panel narrower than 1024 px shows the full desktop page scaled
+                down, instead of Higgsfield's cramped mobile layout.</span>
             </span>
             <input type="checkbox" class="switch" role="switch" data-setting="layout.fitDesktop"
               aria-labelledby="t-fit" aria-describedby="d-fit">
           </label>
-          <div class="row" id="row-min-width">
-            <span class="row-text">
-              <label class="row-title" for="min-page-width">Minimum page width</label>
-              <span class="row-desc" id="d-minwidth">Panels narrower than this are scaled to fit.</span>
-            </span>
-            <span class="select">
-              <select id="min-page-width" aria-describedby="d-minwidth">
-                <option value="1024">1024 px (default)</option>
-                <option value="1280">1280 px</option>
-                <option value="1440">1440 px</option>
-                <option value="1600">1600 px</option>
-              </select>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
-            </span>
-          </div>
           <label class="row">
             <span class="row-text">
               <span class="row-title" id="t-lock">Lock layout (prevent dragging tabs)</span>
@@ -93,7 +78,7 @@
               aria-labelledby="t-lock" aria-describedby="d-lock">
           </label>
         </div>
-        <h2 class="section-label" id="group-notifications">Notifications</h2>
+        <h2 class="section-label">Notifications</h2>
         <div class="card">
           <label class="row">
             <span class="row-text">
@@ -122,11 +107,21 @@
         <div class="card">
           <label class="row">
             <span class="row-text">
-              <span class="row-title" id="t-autosave">Save downloads automatically</span>
-              <span class="row-desc" id="d-autosave">Files go straight to the folder below, without a Save dialog.</span>
+              <span class="row-title" id="t-autosave">Save without asking</span>
+              <span class="row-desc" id="d-autosave">When you press Download on Higgsfield, the file goes straight to
+                the folder below. Turn off to choose where each file goes.</span>
             </span>
             <input type="checkbox" class="switch" role="switch" data-setting="downloads.autoSave"
               aria-labelledby="t-autosave" aria-describedby="d-autosave">
+          </label>
+          <label class="row">
+            <span class="row-text">
+              <span class="row-title" id="t-autodownload">Download finished generations</span>
+              <span class="row-desc" id="d-autodownload">Saves every image and video you generate in the app as soon as
+                it is ready, including ones you would not keep. Failed generations are never saved.</span>
+            </span>
+            <input type="checkbox" class="switch" role="switch" data-setting="downloads.autoDownload"
+              aria-labelledby="t-autodownload" aria-describedby="d-autodownload">
           </label>
           <div class="row row-stack">
             <span class="row-text">
@@ -159,22 +154,9 @@
       <section class="page page-workspaces" data-section="workspaces" hidden>
         <header class="page-header">
           <h1>Workspaces</h1>
-          <p class="page-desc">Named snapshots of your tabs and splits.</p>
+          <p class="page-desc">Named snapshots of your tabs and splits. Save one with <strong>Workspace ▾</strong> in the
+            toolbar or the Workspaces menu.</p>
         </header>
-        <div class="card ws-save">
-          <div class="row row-stack">
-            <label class="row-title" for="ws-name">Save current layout</label>
-            <div class="ws-save-line">
-              <input class="text-input" id="ws-name" type="text" maxlength="60" autocomplete="off" spellcheck="false"
-                placeholder="Name, for example “Image + Video”" aria-describedby="ws-save-message">
-              <button class="btn btn-primary" type="button" id="ws-save">Save current layout</button>
-            </div>
-            <div class="ws-save-feedback">
-              <span id="ws-save-message"></span>
-              <button class="btn btn-xs" type="button" id="ws-replace" hidden>Replace it</button>
-            </div>
-          </div>
-        </div>
         <h2 class="section-label" id="ws-list-head">Saved workspaces</h2>
         <div class="card ws-list" id="ws-list" role="list" aria-labelledby="ws-list-head"></div>
         <div class="empty-note" id="ws-empty" hidden>
@@ -182,8 +164,6 @@
           <p><strong>No workspaces yet.</strong> A workspace saves your current tabs and splits under a name, so you can
             bring that exact layout back with one click.</p>
         </div>
-        <p class="ws-tip" id="ws-tip">“Load workspace 1–9” follow this order.
-          <button class="link-btn" type="button" id="ws-hotkeys-link">Give them shortcuts in Hotkeys</button></p>
       </section>
 
       <section class="page page-hotkeys" data-section="hotkeys" hidden>

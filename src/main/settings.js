@@ -2,15 +2,16 @@
 // Call load() once after app 'ready'. Emits 'change' (settings, patch) on every update.
 const { app } = require('electron');
 const { EventEmitter } = require('events');
-const fs = require('fs');
 const path = require('path');
+const store = require('./store');
 const { ACTIONS } = require('../shared/actions');
 const keys = require('../shared/keys');
 
 function defaults() {
   return {
     downloads: {
-      autoSave: true,
+      autoSave: true, // the site's Download button saves without a Save dialog
+      autoDownload: false, // also save every finished generation on its own
       folder: path.join(app.getPath('downloads'), 'Higgsfield'),
     },
     tray: {
@@ -24,9 +25,11 @@ function defaults() {
     menuBar: {
       autoHide: false,
     },
+    toolbar: {
+      sections: ['image', 'video', 'cinema'], // site sections shown as toolbar buttons
+    },
     layout: {
-      fitDesktop: true, // lay narrow panels out at minPageWidth and scale them down
-      minPageWidth: 1024,
+      fitDesktop: true, // lay narrow panels out at the desktop width and scale them down
       locked: false,
     },
     hotkeys: Object.fromEntries(ACTIONS.map(a => [a.id, a.hotkey])),
@@ -57,9 +60,7 @@ class Settings extends EventEmitter {
   }
 
   load() {
-    let saved = null;
-    try { saved = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { /* first run */ }
-    this.data = mergeKnown(defaults(), saved);
+    this.data = mergeKnown(defaults(), store.readJson(this.file));
     for (const id of Object.keys(this.data.hotkeys)) {
       this.data.hotkeys[id] = keys.normalize(this.data.hotkeys[id]);
     }
@@ -77,19 +78,10 @@ class Settings extends EventEmitter {
   // Deep-merges `patch` (same shape as the settings) and saves.
   update(patch) {
     mergeKnown(this.data, patch);
-    this.save();
+    store.writeJson(this.file, this.data, 2);
     const snapshot = this.get();
     this.emit('change', snapshot, patch);
     return snapshot;
-  }
-
-  save() {
-    try {
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
-    } catch (err) {
-      console.error('Could not save settings:', err);
-    }
   }
 }
 

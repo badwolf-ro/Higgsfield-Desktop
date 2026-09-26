@@ -101,11 +101,15 @@
     return [...MODIFIERS.filter(m => mods.has(m)), key].join('+');
   }
 
+  // "Ctrl+Shift+Left" -> ["Ctrl", "Shift", "←"]
+  function parts(accel) {
+    const canonical = normalize(accel);
+    return canonical ? canonical.split('+').map(p => KEY_LABELS[p] || p) : [];
+  }
+
   // "Ctrl+Shift+Left" -> "Ctrl + Shift + ←"
   function display(accel) {
-    const canonical = normalize(accel);
-    if (!canonical) return '';
-    return canonical.split('+').map(p => KEY_LABELS[p] || p).join(' + ');
+    return parts(accel).join(' + ');
   }
 
   // Returns an error message, or null when the shortcut is usable.
@@ -126,5 +130,5 @@
     return null;
   }
 
-  return { MODIFIERS, keyFromCode, fromInput, fromKeyboardEvent, normalize, display, validate };
+  return { fromInput, fromKeyboardEvent, normalize, parts, display, validate };
 });

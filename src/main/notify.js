@@ -24,8 +24,16 @@ const MAX_JOBS = 2000;
 const STALE_MS = 45 * 60 * 1000;
 
 let opts = null;
-const jobs = new Map(); // job id -> { owner: webContentsId|null, type, done, since }
+// job id -> { owner: webContentsId|null, type, done, since, file, fileDue }
+// file: the finished image or video; fileDue: finished before its file was known.
+const jobs = new Map();
 const shown = new Set(); // keeps Notification objects alive until clicked or closed
+
+// The full-size result, the same file the site's Download button fetches.
+function resultFile(payload) {
+  const raw = payload.results && payload.results.raw;
+  return raw && typeof raw.url === 'string' ? raw.url : null;
+}
 
 function isFinished(status, ipCheckFinished) {
   if (status === 'completed') return ipCheckFinished !== false;
@@ -56,7 +64,7 @@ function reportStatus() {
   const n = generatingCount();
   if (n === lastCount) return;
   lastCount = n;
-  if (opts.onStatus) opts.onStatus(n);
+  opts.onStatus(n);
 }
 
 function announce(job, status) {
@@ -88,6 +96,7 @@ function announce(job, status) {
 // live: the update came from the event stream, so a first sighting that is
 // already finished is a real completion. Poll responses also list jobs that
 // finished long ago, so those only count after an unfinished sighting.
+// The caller reports the new generating count once it has applied a whole response.
 function update(payload, live) {
   if (!payload || typeof payload !== 'object') return;
   const id = payload.job_id || payload.id;
@@ -102,11 +111,24 @@ function update(payload, live) {
     if (jobs.size > MAX_JOBS) jobs.delete(jobs.keys().next().value);
   }
   if (!job.type && payload.job_set_type) job.type = payload.job_set_type;
+  const file = resultFile(payload);
+  if (file && !job.file) {
+    job.file = file;
+    if (job.fileDue) fileReady(job);
+  }
   if (!job.done && !finished) job.since = Date.now();
-  if (job.done || !finished) return reportStatus();
+  if (job.done || !finished) return;
   job.done = true;
-  reportStatus();
+  if (status === 'completed') {
+    if (job.file) fileReady(job);
+    else job.fileDue = true; // a later poll response carries it
+  }
   announce(job, status);
+}
+
+function fileReady(job) {
+  job.fileDue = false;
+  opts.onFileReady(job.owner, job.file);
 }
 
 // Records which tab started a job, so its alert can bring that tab forward.
@@ -119,7 +141,6 @@ function registerCreated(body, owner) {
     job.type = job.type || body.type || body.job_set_type || j.job_set_type || null;
     jobs.set(j.id, job);
   }
-  reportStatus();
 }
 
 function parseSse(request, text) {
@@ -141,10 +162,11 @@ function parseSse(request, text) {
       payload = payload.data || payload;
     }
     if (event === 'job:status_changed') update(payload, true);
-    else if (event === 'folder:update' && payload && payload.folder_id && payload.name && opts.onFolderRenamed) {
+    else if (event === 'folder:update' && payload && payload.folder_id && payload.name) {
       opts.onFolderRenamed(payload.folder_id, payload.name);
     }
   }
+  reportStatus();
 }
 
 function classify(method, url) {
@@ -163,6 +185,7 @@ function handleBody(kind, text, owner) {
   else if (kind === 'jobset' && Array.isArray(body.jobs)) {
     body.jobs.forEach(j => update({ job_set_type: body.type, ...j }, false));
   }
+  reportStatus();
 }
 
 // Called for every tab's webContents.
@@ -231,10 +254,10 @@ function watch(contents) {
 }
 
 // options: { settings, icon, getWindow(), getTab(webContentsId), onClick(webContentsId|null), onStatus(count),
-//            onFolderRenamed(folderId, name) }
+//            onFolderRenamed(folderId, name), onFileReady(webContentsId|null, url) }
 function init(options) {
   opts = options;
   setInterval(reportStatus, 60 * 1000).unref();
 }
 
-module.exports = { init, watch, generatingCount, modelLabel, isFinished };
+module.exports = { init, watch };

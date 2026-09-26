@@ -3,14 +3,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('hf', {
   getInitialState: () => ipcRenderer.invoke('shell:get-initial-state'),
-  saveLayout: (layout, token) => ipcRenderer.send('shell:save-layout', { layout, token }),
+  saveLayout: layout => ipcRenderer.send('shell:save-layout', layout),
   tabsChanged: tabs => ipcRenderer.send('shell:tabs-changed', tabs),
   showInFolder: filePath => ipcRenderer.send('shell:show-in-folder', String(filePath)),
   viewport: info => ipcRenderer.send('shell:viewport', info),
   promptResult: (requestId, value) => ipcRenderer.send('shell:prompt-result', { requestId, value }),
   workspace: (op, args) => ipcRenderer.send('shell:workspace', { op, args }),
   setLocked: value => ipcRenderer.send('shell:set-locked', !!value),
-  projectAction: (op, args) => ipcRenderer.send('shell:project', { op, args }),
+  setQuickSections: ids => ipcRenderer.send('shell:set-quick-sections', ids),
+  projectAction: op => ipcRenderer.send('shell:project', op),
   onCommand: cb => {
     const listener = (_event, command) => cb(command);
     ipcRenderer.on('shell:command', listener);

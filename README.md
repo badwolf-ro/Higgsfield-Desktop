@@ -29,6 +29,7 @@ Your login is kept between launches.
 ## The window
 
 - **Toolbar.** One thin toolbar, left to right:
+  - buttons for your main sections (Image, Video and Cinema Studio to start with)
   - the Cinema Studio project you are in, if any
   - how many generations are running
   - the last file you saved
@@ -39,6 +40,15 @@ Your login is kept between launches.
 - **Menus.** The menu bar has five menus: File, Edit, View, Tabs and Workspaces.
 
 ## Features
+
+### Section buttons
+
+The buttons at the left of the toolbar take you to the parts of Higgsfield you use most.
+
+- **Click** a button to go to a tab that is already showing that section, or to open one.
+- **Ctrl+click** or middle-click it to always open a new tab.
+- **Choose which buttons appear** with the **▾** next to them. Tick any of Higgsfield's sections: Explore, Image, Video, Audio, Cinema Studio, Canvas, Supercomputer, Effects, Marketing Studio and Community. They keep the site's order.
+- **Narrow window.** When the toolbar runs out of room, the buttons show only their icons. Hover over one to see its name.
 
 ### Tabs and docking
 
@@ -56,10 +66,10 @@ Your login is kept between launches.
 
 ### The desktop layout in every panel
 
-When you split the window, each panel gets narrower, and Higgsfield would normally switch to its cramped small-screen layout. The app prevents that: a narrow panel shows the full desktop page, scaled down to fit. The scale shows as a small percentage chip in the panel's tab bar.
+When you split the window, each panel gets narrower, and Higgsfield would normally switch to its cramped small-screen layout. The app prevents that: a panel narrower than 1024 px shows the full desktop page, scaled down to fit. The scale shows as a small percentage chip in the panel's tab bar.
 
 - **Zoom one tab.** **Ctrl+=**, **Ctrl+-**, **Ctrl+0** or Ctrl+mouse wheel. It never affects other tabs.
-- **Settings.** Change the minimum page width (default 1024 px) or turn this off in **Settings → General**.
+- **Settings.** Turn this off in **Settings → General**.
 
 ### Workspaces
 
@@ -67,21 +77,21 @@ A workspace is a named snapshot of your tabs and splits, like Layouts in Unity o
 
 - **Save.** **Workspaces → Save Workspace…** (or **Workspace ▾ → Save Workspace…** in the toolbar), then give it a name.
 - **Load.** Pick a workspace from the same menu. It replaces your current tabs with the saved ones.
-- **Manage.** Rename, reorder or delete workspaces in **Settings → Workspaces**.
-- **Hotkeys.** The first nine can each get a hotkey in **Settings → Hotkeys**.
+- **Manage.** Rename or delete workspaces in **Settings → Workspaces**.
 - **Lock Layout.** The padlock stops tabs being dragged by accident.
 - **Reset Layout.** Starts over with one tab.
 
 ### Cinema Studio projects and downloads
 
-- **Automatic saving.** Anything you download from Higgsfield is saved straight to `Downloads\Higgsfield`, with no Save dialog. A file never replaces an older one: a second `image.png` becomes `image (1).png`.
+- **The Download button.** When you press Download on Higgsfield, the file is saved straight to `Downloads\Higgsfield`, with no Save dialog. A file never replaces an older one: a second `image.png` becomes `image (1).png`.
 - **Project folders.** When a tab is inside a **Cinema Studio project**, files you download from that tab go into a folder named after the project, for example `Downloads\Higgsfield\Nike spot\`. The app recognises the project on its own; there is nothing to set up.
 - **Project chip.** When the current tab is in a project, the toolbar shows the project's name. Click it to:
   - open the project's folder
   - rename the folder
   - jump to a recent project
 - **Settings → Downloads.** Here you can:
-  - change the main download folder, or turn automatic saving off
+  - change the main download folder, or have the Download button ask where to save each file
+  - turn on **Download finished generations**. It is off by default because it saves every result, including the ones you would throw away. When on, each image or video you generate in the app is saved to its tab's folder as soon as it is ready. Failed generations are never saved.
   - see every Cinema Studio project the app has picked up
   - give a project a different folder, rename it, or forget it
 
@@ -133,7 +143,7 @@ Higgsfield itself does not raise notifications for image or video jobs. The app 
 | Clear cache | Ctrl+Shift+Delete |
 | **Show or hide Higgsfield (from any app)** | **Ctrl+Alt+H** |
 
-Opening a section in a new tab, saving a workspace, loading workspaces 1–9 and locking the layout have no shortcut by default. You can add one for each.
+Opening a section in a new tab, saving a workspace, locking the layout and opening the Hotkeys page have no shortcut by default. You can add one for each.
 
 ### Clearing the cache
 
@@ -184,6 +194,7 @@ npm start
 ```
 main.js                     Entry point: windows, IPC, link rules, context menu, wiring
 src/main/settings.js        Settings store (settings.json)
+src/main/store.js           Reading and writing the JSON files in the profile folder
 src/main/hotkeys.js         App shortcuts (before-input-event on every tab) and the global shortcut
 src/main/downloads.js       Auto-save, unique file names, taskbar progress
 src/main/projects.js        Cinema Studio project detection and project folders
@@ -193,7 +204,7 @@ src/main/notify.js          Generation-finished detection and Windows notificati
 src/main/cdp.js             One DevTools Protocol session per tab, shared by the two above
 src/main/tray.js            Tray icon and close-to-tray
 src/main/menu.js            Menu bar
-src/shared/actions.js       Site sections and every action with its default shortcut
+src/shared/actions.js       Which addresses are Higgsfield, its sections, every action and its default shortcut
 src/shared/keys.js          Shortcut parsing, display and validation (main + pages)
 src/renderer/shell/         Toolbar, tabs and docking (dockview-core, one <webview> per tab)
 src/renderer/settings/      Settings window

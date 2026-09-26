@@ -7,10 +7,10 @@ function truncate(text, max) {
   return text.length > max ? text.slice(0, max - 1) + '…' : text;
 }
 
-// opts: { dispatch(id), accelerator(id), sendCommand(cmd), openSettings(section), clearAllData(), tabs,
+// opts: { dispatch(id), accelerator(id), sendCommand(cmd), openSettings(section), clearAllData(),
 //         workspaces: [{ id, name, tabCount }], loadWorkspace(id), locked }
 function build(opts) {
-  const { dispatch, accelerator, sendCommand, openSettings, clearAllData, tabs, workspaces, loadWorkspace, locked } = opts;
+  const { dispatch, accelerator, sendCommand, openSettings, clearAllData, workspaces, loadWorkspace, locked } = opts;
 
   const action = (id, extra) => ({
     label: byId[id].label,
@@ -21,22 +21,10 @@ function build(opts) {
   });
   const sep = { type: 'separator' };
 
-  const openTabItems = tabs.length
-    ? tabs.map(t => ({
-      label: truncate(t.title || 'Higgsfield', 48).replace(/&/g, '&&'),
-      type: 'radio',
-      checked: t.active,
-      enabled: t.webContentsId != null,
-      click: () => sendCommand({ type: 'focusTab', webContentsId: t.webContentsId }),
-    }))
-    : [{ label: 'No open tabs', enabled: false }];
-
   const workspaceItems = workspaces.length
-    ? workspaces.map((w, i) => ({
-      label: `${i < 9 ? `&${i + 1}  ` : ''}${truncate(w.name, 48).replace(/&/g, '&&')}`,
+    ? workspaces.map(w => ({
+      label: truncate(w.name, 48).replace(/&/g, '&&'),
       sublabel: `${w.tabCount} ${w.tabCount === 1 ? 'tab' : 'tabs'}`,
-      accelerator: i < 9 ? accelerator('workspace:' + (i + 1)) : undefined,
-      registerAccelerator: false,
       click: () => loadWorkspace(w.id),
     }))
     : [{ label: 'No saved workspaces yet', enabled: false }];
@@ -95,8 +83,6 @@ function build(opts) {
         sep,
         action('splitRight', { label: 'Split Right' }),
         action('splitDown', { label: 'Split Down' }),
-        sep,
-        ...openTabItems,
       ],
     },
     {

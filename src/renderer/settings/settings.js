@@ -5,25 +5,18 @@
 
   const api = window.settingsApi;
   const Keys = window.HFKeys;
+  const { ACTIONS: actions, byId } = window.HFActions;
   const SECTIONS = ['general', 'downloads', 'workspaces', 'hotkeys'];
-  // Older section names still arrive from menus: [page, group to scroll to].
-  const SECTION_ALIASES = {
-    notifications: ['general', '#group-notifications'],
-    projects: ['downloads', '#pj-head'],
-  };
   const MODIFIER_LABELS = [['ctrlKey', 'Ctrl'], ['altKey', 'Alt'], ['shiftKey', 'Shift'], ['metaKey', 'Win']];
   // Keys that only change what the next key means; pressing them alone must not end recording.
   const NON_KEYS = new Set(['Control', 'Alt', 'AltGraph', 'Shift', 'Meta', 'OS', 'Super', 'Hyper',
     'Fn', 'FnLock', 'CapsLock', 'NumLock', 'ScrollLock', 'Symbol', 'SymbolLock']);
   const GROUP_NOTES = {
     'Open in new tab': 'Open a part of Higgsfield in a new tab. None are set until you add one.',
-    'Workspaces': 'Numbers follow the order on the Workspaces page.',
     'From any app': 'Registered with Windows, so these work even while another app is in front.',
   };
 
   let settings = null;
-  let defaults = null;
-  let actions = [];
   let recording = null; // { id, mods: [], rejected: '', busy }
   const rows = new Map(); // action id -> { action, row, keys, hint, error, reset, change, errorText }
 
@@ -83,8 +76,6 @@
   // ---- sections ----
 
   function showSection(name) {
-    let anchor = null;
-    if (SECTION_ALIASES[name]) [name, anchor] = SECTION_ALIASES[name];
     if (!SECTIONS.includes(name)) name = 'general';
     if (recording) finishRecording();
     const changed = currentSection() !== name;
@@ -95,8 +86,7 @@
       else btn.removeAttribute('aria-current');
     }
     for (const page of $$('.page')) page.hidden = page.dataset.section !== name;
-    if (anchor) $(anchor).scrollIntoView({ block: 'start' });
-    else if (changed) $('#content').scrollTop = 0;
+    if (changed) $('#content').scrollTop = 0;
     try { history.replaceState(null, '', '?section=' + name); } catch { /* cosmetic only */ }
   }
 
@@ -137,16 +127,6 @@
         }
       });
     }
-    const minWidth = $('#min-page-width');
-    minWidth.addEventListener('change', async () => {
-      const value = Number(minWidth.value);
-      try {
-        apply(await api.update({ layout: { minPageWidth: value } }));
-      } catch (err) {
-        console.error(err);
-        renderGeneral();
-      }
-    });
     $('#choose-folder').addEventListener('click', async () => {
       const folder = await api.chooseDownloadFolder();
       if (folder) apply(await api.update({ downloads: { folder } }));
@@ -156,19 +136,7 @@
 
   function renderGeneral() {
     for (const input of $$('input[data-setting]')) input.checked = !!getPath(settings, input.dataset.setting);
-    const layout = settings.layout || {};
-    const minWidth = $('#min-page-width');
-    const width = String(layout.minPageWidth || 1024);
-    if (![...minWidth.options].some(o => o.value === width)) {
-      const option = el('option', null, width + ' px');
-      option.value = width;
-      minWidth.append(option);
-    }
-    minWidth.value = width;
-    const fit = !!layout.fitDesktop;
-    minWidth.disabled = !fit;
-    $('#row-min-width').classList.toggle('is-disabled', !fit);
-    const folder = (settings.downloads && settings.downloads.folder) || '';
+    const folder = settings.downloads.folder;
     $('#folder-path').textContent = folder;
     $('#folder-path').title = folder;
   }
@@ -176,15 +144,11 @@
   // ---- hotkeys ----
 
   function bindingOf(id) {
-    return Keys.normalize((settings.hotkeys || {})[id] || '');
+    return Keys.normalize(settings.hotkeys[id] || '');
   }
 
   function defaultOf(id) {
-    return Keys.normalize((defaults.hotkeys || {})[id] || '');
-  }
-
-  function fullLabel(action) {
-    return action.id.startsWith('open:') ? `Open ${action.label} in new tab` : action.label;
+    return Keys.normalize(byId[id].hotkey);
   }
 
   function keycaps(parts, className) {
@@ -194,11 +158,6 @@
       wrap.append(el('kbd', 'kbd', part));
     });
     return wrap;
-  }
-
-  function accelParts(accel) {
-    const shown = Keys.display(accel);
-    return shown ? shown.split(' + ') : [];
   }
 
   function buildHotkeys() {
@@ -276,7 +235,7 @@
       box.append(keycaps(recording.mods.concat('…'), 'keycaps-live'));
     } else if (recording.rejected) {
       box.classList.add('rejected');
-      box.append(keycaps(accelParts(recording.rejected)));
+      box.append(keycaps(Keys.parts(recording.rejected)));
     } else {
       box.append(el('span', 'hk-capture-text', 'Press a shortcut…'));
     }
@@ -289,7 +248,7 @@
     const accel = bindingOf(id);
     const def = defaultOf(id);
     const isRec = !!recording && recording.id === id;
-    const name = fullLabel(r.action);
+    const name = r.action.title;
 
     r.row.classList.toggle('recording', isRec);
     r.row.classList.toggle('has-error', !!r.errorText);
@@ -301,7 +260,7 @@
       // The row grows while recording (hint, error, held keys); keep all of it on screen.
       r.row.scrollIntoView({ block: 'nearest' });
     } else if (accel) {
-      r.keys.replaceChildren(keycaps(accelParts(accel)));
+      r.keys.replaceChildren(keycaps(Keys.parts(accel)));
       r.keys.setAttribute('aria-label', Keys.display(accel));
     } else {
       r.keys.replaceChildren(el('span', 'kbd-empty', 'Not set'));
@@ -350,7 +309,7 @@
     document.body.classList.add('recording');
     renderRow(id);
     r.change.focus({ preventScroll: true });
-    announce(`Recording a shortcut for ${fullLabel(r.action)}. Press the keys. Escape cancels, Backspace clears.`);
+    announce(`Recording a shortcut for ${r.action.title}. Press the keys. Escape cancels, Backspace clears.`);
   }
 
   function finishRecording() {
@@ -391,7 +350,7 @@
       if (stillHere) finishRecording();
       apply(res.settings);
       flashSaved(id);
-      announce(accel ? `${fullLabel(r.action)}: ${Keys.display(accel)}` : `${fullLabel(r.action)}: no shortcut`);
+      announce(accel ? `${r.action.title}: ${Keys.display(accel)}` : `${r.action.title}: no shortcut`);
       return;
     }
     if (!stillHere) return;
@@ -463,7 +422,7 @@
 
   function searchText(action) {
     const accel = bindingOf(action.id);
-    return [action.label, action.group, fullLabel(action), accel, Keys.display(accel),
+    return [action.title, action.group, accel, Keys.display(accel),
       action.global ? 'works in any app global' : ''].join(' ').toLowerCase();
   }
 
@@ -537,8 +496,6 @@
   // ---- shared by the lists (Cinema Studio projects, workspaces) ----
 
   const ICONS = {
-    up: [['path', { d: 'M12 18V6M6.5 11.5L12 6l5.5 5.5' }]],
-    down: [['path', { d: 'M12 6v12M6.5 12.5L12 18l5.5-5.5' }]],
     rename: [['path', { d: 'M5 19h3.5L18.2 9.3a2.1 2.1 0 0 0-3-3L5.5 16v3z' }], ['path', { d: 'M13.5 8l3 3' }]],
     del: [['path', { d: 'M5 7h14M10 7V5h4v2M7 7l.8 12h8.4L17 7' }], ['path', { d: 'M10.5 10.5v5.5M13.5 10.5v5.5' }]],
     folder: [['path', { d: 'M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z' }]],
@@ -594,14 +551,17 @@
     return String(name || '').replace(/\s+/g, ' ').trim();
   }
 
+  // Always resolves to a result; a failure without a message gets a generic one.
   async function callApi(call) {
+    let res = null;
     try {
-      const res = await call();
-      if (res) return res;
+      res = await call();
     } catch (err) {
       console.error(err);
     }
-    return { ok: false, error: 'Something went wrong. Try again.' };
+    if (!res) res = { ok: false };
+    if (!res.ok && !res.error) res.error = 'Something went wrong. Try again.';
+    return res;
   }
 
   function setRowError(r, message) {
@@ -639,11 +599,11 @@
     }
   }
 
-  function nameParts(extraClass) {
-    const nameBtn = el('button', 'item-name ' + extraClass + '-name');
+  function nameParts() {
+    const nameBtn = el('button', 'item-name');
     nameBtn.type = 'button';
     nameBtn.title = 'Rename (F2)';
-    const editor = el('input', 'item-editor ' + extraClass + '-editor');
+    const editor = el('input', 'item-editor');
     editor.type = 'text';
     editor.maxLength = 60;
     editor.spellcheck = false;
@@ -653,12 +613,12 @@
   }
 
   // Inline rename: click the name, F2 or a Rename button. Enter saves, Esc cancels, leaving the field saves.
-  // ctrl: { rows: Map, item(id), canRename(id), save(id, name) → Promise<boolean>, render(), emptyMessage }
+  // ctrl: { rows: Map, item(id), save(id, name) → Promise<boolean>, render(), emptyMessage }
   function inlineRename(ctrl) {
     function start(id) {
       const r = ctrl.rows.get(id);
       const item = ctrl.item(id);
-      if (!r || !item || r.editing || !ctrl.canRename(id)) return;
+      if (!r || !item || r.editing) return;
       r.editing = true;
       r.errorText = '';
       r.editor.value = item.name;
@@ -725,17 +685,16 @@
   // ---- Cinema Studio projects (Downloads page) ----
   // The main process finds them from tab URLs. Here the user can rename the folder, move it, or forget one.
 
-  let projects = { root: '', items: [] }; // items: most recently used first
+  let projects = []; // most recently used first
   const pjRows = new Map(); // project key -> row elements + { editing, saving, errorText }
 
   function pjItem(key) {
-    return projects.items.find(p => p.key === key);
+    return projects.find(p => p.key === key);
   }
 
   const pjRename = inlineRename({
     rows: pjRows,
     item: pjItem,
-    canRename: key => !!pjItem(key),
     save: (key, name) => pjOp(key, 'rename', { key, name }),
     render: () => renderProjects(),
     emptyMessage: 'Give the folder a name.',
@@ -747,9 +706,8 @@
     const res = await callApi(() => api.project(op, args));
     if (res.projects) applyProjects(res.projects);
     if (res.ok) return true;
-    const message = res.error || 'Something went wrong. Try again.';
-    if (pjRows.get(key)) setRowError(pjRows.get(key), message);
-    else announce(message);
+    if (pjRows.get(key)) setRowError(pjRows.get(key), res.error);
+    else announce(res.error);
     return false;
   }
 
@@ -762,7 +720,7 @@
     const icon = svg(ICONS.clapper);
     icon.classList.add('pj-icon');
     const title = el('div', 'pj-title');
-    const { nameBtn, editor } = nameParts('pj');
+    const { nameBtn, editor } = nameParts();
     nameBtn.title = 'Rename the folder (F2)';
     title.append(nameBtn, editor);
     const open = el('button', 'btn btn-sm pj-open', 'Open in Cinema Studio');
@@ -816,7 +774,6 @@
     const p = pjItem(key);
     const name = p.name;
 
-    r.row.classList.toggle('editing', r.editing);
     r.row.classList.toggle('has-error', !!r.errorText);
     r.nameBtn.textContent = name;
     r.nameBtn.hidden = r.editing;
@@ -841,14 +798,14 @@
   }
 
   function renderProjects() {
-    const keys = projects.items.map(p => p.key);
+    const keys = projects.map(p => p.key);
     syncRows($('#pj-list'), pjRows, keys, buildPjRow);
     keys.forEach(renderPjRow);
     $('#pj-empty').hidden = keys.length > 0;
   }
 
   function applyProjects(next) {
-    if (!next || !Array.isArray(next.items)) return;
+    if (!Array.isArray(next)) return;
     projects = next;
     renderProjects();
   }
@@ -867,27 +824,27 @@
       if (r) r.forget.focus();
       return;
     }
-    const index = projects.items.findIndex(x => x.key === key);
+    const index = projects.findIndex(x => x.key === key);
     if (!(await pjOp(key, 'forget', { key }))) {
       if (r && r.row.isConnected) r.forget.focus();
       return;
     }
     announce(`Forgot ${p.name}.`);
-    const next = projects.items[Math.min(index, projects.items.length - 1)];
+    const next = projects[Math.min(index, projects.length - 1)];
     if (next) pjRows.get(next.key).nameBtn.focus();
     else $('#choose-folder').focus();
   }
 
   function initProjects(initial) {
-    if (api.onProjectsChanged) api.onProjectsChanged(applyProjects);
-    applyProjects(initial && Array.isArray(initial.items) ? initial : { root: '', items: [] });
+    api.onProjectsChanged(applyProjects);
+    applyProjects(initial);
   }
 
   // ---- workspaces ----
+  // Saved from the toolbar or the Workspaces menu; here they can be loaded, renamed or deleted.
 
-  let workspaces = []; // [{ id, name, tabCount, savedAt }] in "Load workspace N" order
+  let workspaces = []; // [{ id, name, tabCount, savedAt }] in the order they were saved
   const wsRows = new Map(); // workspace id -> row elements + { editing, saving, errorText }
-  let wsReplaceId = null; // offered after a save hits a taken name
 
   function wsItem(id) {
     return workspaces.find(w => w.id === id);
@@ -896,21 +853,18 @@
   const wsRename = inlineRename({
     rows: wsRows,
     item: wsItem,
-    canRename: id => !!wsItem(id),
     save: (id, name) => wsOp(id, 'rename', { id, name }),
     render: () => renderWorkspaces(),
     emptyMessage: 'Give the workspace a name.',
   });
 
-  // Runs an op for one row; a failure is shown on that row.
+  // Runs an op for one row; a failure is shown on that row. Main sends the list back either way.
   async function wsOp(id, op, args) {
     setRowError(wsRows.get(id), '');
     const res = await callApi(() => api.workspace(op, args));
-    if (res.ok) {
-      applyWorkspaces(res.workspaces);
-      return true;
-    }
-    setRowError(wsRows.get(id), res.error || 'Something went wrong. Try again.');
+    if (res.workspaces) applyWorkspaces(res.workspaces);
+    if (res.ok) return true;
+    setRowError(wsRows.get(id), res.error);
     return false;
   }
 
@@ -919,14 +873,10 @@
     row.dataset.id = id;
     row.setAttribute('role', 'listitem');
 
-    const num = el('span', 'ws-num');
-    num.setAttribute('aria-hidden', 'true');
-
     const main = el('div', 'ws-main');
     const line = el('div', 'ws-line');
-    const { nameBtn, editor } = nameParts('ws');
-    const keys = el('span', 'ws-keys');
-    line.append(nameBtn, editor, keys);
+    const { nameBtn, editor } = nameParts();
+    line.append(nameBtn, editor);
 
     const meta = el('div', 'ws-meta');
     const tabs = el('span', 'ws-tabs');
@@ -940,14 +890,12 @@
     load.type = 'button';
 
     const tools = el('div', 'ws-tools');
-    const up = iconButton('ws-up', 'Move up', ICONS.up);
-    const down = iconButton('ws-down', 'Move down', ICONS.down);
     const rename = iconButton('ws-rename', 'Rename', ICONS.rename);
     const del = iconButton('ws-delete', 'Delete', ICONS.del);
-    tools.append(up, down, rename, del);
+    tools.append(rename, del);
 
-    row.append(num, main, load, tools);
-    const r = { row, num, nameBtn, editor, tabs, saved, keys, error, load, up, down, rename, del,
+    row.append(main, load, tools);
+    const r = { row, nameBtn, editor, tabs, saved, error, load, rename, del,
       editing: false, saving: false, errorText: '' };
 
     wsRename.wire(id, r, rename);
@@ -958,42 +906,27 @@
         announce(`Loaded ${name}.`);
       }
     });
-    up.addEventListener('click', () => moveWorkspace(id, -1));
-    down.addEventListener('click', () => moveWorkspace(id, 1));
     del.addEventListener('click', () => deleteWorkspace(id));
     return r;
   }
 
-  function renderWsRow(id, index, count) {
+  function renderWsRow(id) {
     const r = wsRows.get(id);
     const w = wsItem(id);
-    const binding = index < 9 && settings ? bindingOf('workspace:' + (index + 1)) : '';
 
-    r.row.classList.toggle('editing', r.editing);
     r.row.classList.toggle('has-error', !!r.errorText);
-    r.num.textContent = String(index + 1);
     r.nameBtn.textContent = w.name;
     r.nameBtn.hidden = r.editing;
     r.editor.hidden = !r.editing;
-    r.editor.setAttribute('aria-label', `Name of workspace ${index + 1}`);
+    r.editor.setAttribute('aria-label', `Name of ${w.name}`);
 
     r.tabs.textContent = tabCountText(w.tabCount);
     const when = relativeTime(w.savedAt);
     r.saved.hidden = !when;
     r.saved.textContent = when ? 'saved ' + when : '';
     r.saved.title = exactTime(w.savedAt);
-    r.keys.hidden = !binding || r.editing;
-    r.keys.replaceChildren();
-    if (binding) {
-      r.keys.append(keycaps(accelParts(binding), 'keycaps-sm'));
-      r.keys.title = `Load workspace ${index + 1}`;
-    }
 
     r.load.setAttribute('aria-label', `Load ${w.name}`);
-    r.up.disabled = index === 0;
-    r.down.disabled = index === count - 1;
-    r.up.setAttribute('aria-label', `Move ${w.name} up`);
-    r.down.setAttribute('aria-label', `Move ${w.name} down`);
     r.rename.setAttribute('aria-label', `Rename ${w.name}`);
     r.del.setAttribute('aria-label', `Delete ${w.name}`);
     r.error.textContent = r.errorText;
@@ -1002,39 +935,15 @@
   function renderWorkspaces() {
     const ids = workspaces.map(w => w.id);
     syncRows($('#ws-list'), wsRows, ids, buildWsRow);
-    ids.forEach((id, i) => renderWsRow(id, i, ids.length));
+    ids.forEach(renderWsRow);
     $('#ws-empty').hidden = ids.length > 0;
     $('#ws-list-head').hidden = ids.length === 0;
-    $('#ws-tip').hidden = ids.length === 0;
-    if (wsReplaceId && !wsItem(wsReplaceId)) hideReplace();
   }
 
   function applyWorkspaces(next) {
     if (!Array.isArray(next)) return;
     workspaces = next;
     renderWorkspaces();
-  }
-
-  function setSaveError(message) {
-    $('#ws-save-message').textContent = message;
-    $('.ws-save').classList.toggle('has-error', !!message);
-    if (message) announce(message);
-  }
-
-  function hideReplace() {
-    wsReplaceId = null;
-    $('#ws-replace').hidden = true;
-  }
-
-  async function moveWorkspace(id, delta) {
-    const r = wsRows.get(id);
-    const btn = delta < 0 ? r.up : r.down;
-    if (!(await wsOp(id, 'move', { id, delta }))) return;
-    const index = workspaces.findIndex(w => w.id === id);
-    const target = btn.disabled ? (delta < 0 ? r.down : r.up) : btn;
-    if (!target.disabled) target.focus({ preventScroll: true });
-    r.row.scrollIntoView({ block: 'nearest' });
-    announce(`${wsItem(id).name} is now number ${index + 1}.`);
   }
 
   async function deleteWorkspace(id) {
@@ -1059,89 +968,12 @@
     announce(`Deleted ${w.name}.`);
     const next = workspaces[Math.min(index, workspaces.length - 1)];
     if (next) wsRows.get(next.id).nameBtn.focus();
-    else $('#ws-name').focus();
-  }
-
-  async function saveWorkspace() {
-    const input = $('#ws-name');
-    const name = cleanName(input.value);
-    hideReplace();
-    setSaveError('');
-    if (!name) {
-      setSaveError('Type a name for the workspace first.');
-      input.focus();
-      return;
-    }
-    const before = new Set(workspaces.map(w => w.id));
-    const res = await callApi(() => api.workspace('save', { name }));
-    if (res.ok) {
-      applyWorkspaces(res.workspaces);
-      input.value = '';
-      const added = workspaces.find(w => !before.has(w.id));
-      if (added) {
-        flashRow(wsRows.get(added.id));
-        wsRows.get(added.id).row.scrollIntoView({ block: 'nearest' });
-      }
-      announce(`Saved the current layout as ${name}.`);
-      return;
-    }
-    const taken = res.code === 'exists'
-      ? workspaces.find(w => w.name.toLowerCase() === name.toLowerCase())
-      : null;
-    setSaveError(res.error || 'Something went wrong. Try again.');
-    if (taken) {
-      wsReplaceId = taken.id;
-      const replace = $('#ws-replace');
-      replace.setAttribute('aria-label', `Replace “${taken.name}” with the current layout`);
-      replace.hidden = false;
-      replace.focus();
-    } else {
-      input.focus();
-    }
-  }
-
-  async function replaceWorkspace() {
-    const id = wsReplaceId;
-    const w = wsItem(id);
-    if (!w) return hideReplace();
-    const res = await callApi(() => api.workspace('replace', { id }));
-    if (!res.ok) {
-      setSaveError(res.error || 'Something went wrong. Try again.');
-      return;
-    }
-    hideReplace();
-    setSaveError('');
-    applyWorkspaces(res.workspaces);
-    $('#ws-name').value = '';
-    const r = wsRows.get(id);
-    if (r) {
-      flashRow(r);
-      r.row.scrollIntoView({ block: 'nearest' });
-    }
-    $('#ws-name').focus();
-    announce(`Replaced ${w.name} with the current layout.`);
+    else $('.nav-item.active').focus();
   }
 
   function initWorkspaces(initial) {
-    const input = $('#ws-name');
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        saveWorkspace();
-      }
-    });
-    input.addEventListener('input', () => { setSaveError(''); hideReplace(); });
-    $('#ws-save').addEventListener('click', saveWorkspace);
-    $('#ws-replace').addEventListener('click', replaceWorkspace);
-    $('#ws-hotkeys-link').addEventListener('click', () => {
-      showSection('hotkeys');
-      const search = $('#hk-search');
-      search.value = 'workspace';
-      applySearch();
-      search.focus();
-    });
-    if (api.onWorkspacesChanged) api.onWorkspacesChanged(applyWorkspaces);
-    applyWorkspaces(Array.isArray(initial) ? initial : []);
+    api.onWorkspacesChanged(applyWorkspaces);
+    applyWorkspaces(initial);
   }
 
   // ---- state ----
@@ -1151,7 +983,6 @@
     settings = next;
     renderGeneral();
     renderHotkeys();
-    renderWorkspaces(); // shows each workspace's "Load workspace N" shortcut
   }
 
   async function init() {
@@ -1160,9 +991,6 @@
     api.onShowSection(section => showSection(section));
     try {
       const state = await api.getState();
-      defaults = state.defaults || {};
-      actions = Array.isArray(state.actions) && state.actions.length ? state.actions : window.HFActions.ACTIONS;
-      if (!defaults.hotkeys) defaults.hotkeys = Object.fromEntries(actions.map(a => [a.id, a.hotkey]));
       initToggles();
       initHotkeys();
       initProjects(state.projects);

@@ -6,13 +6,15 @@
 // Clicks and scrolling map correctly through the emulated scale.
 const cdp = require('./cdp');
 
+// Narrower than this, Higgsfield switches to its small-screen layout.
+const DESKTOP_WIDTH = 1024;
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 5;
 
-let settings = null;
-let onInfo = () => {};
-let onZoomRequest = () => {};
-const tabs = new Map(); // webContentsId -> { contents, width, height, zoom, applied }
+let settings;
+let onInfo;
+let onZoomRequest;
+const tabs = new Map(); // webContentsId -> { contents, width, height, zoom, applied, info }
 
 function clamp(n, lo, hi) {
   return Math.min(hi, Math.max(lo, n));
@@ -20,22 +22,23 @@ function clamp(n, lo, hi) {
 
 function apply(tab) {
   if (!tab.width || !tab.height || tab.contents.isDestroyed()) return;
-  const { fitDesktop, minPageWidth } = settings.get().layout;
   let scale = tab.zoom;
   let fitted = false;
-  if (fitDesktop && minPageWidth > 0 && tab.width / scale < minPageWidth) {
-    scale = tab.width / minPageWidth;
+  if (settings.get().layout.fitDesktop && tab.width / scale < DESKTOP_WIDTH) {
+    scale = tab.width / DESKTOP_WIDTH;
     fitted = true;
   }
   scale = clamp(scale, MIN_SCALE, MAX_SCALE);
+  const actualSize = Math.abs(scale - 1) < 0.001;
 
-  const key = `${tab.width}x${tab.height}@${scale.toFixed(4)}`;
+  // At 100% there is no override, so resizing needs no new command.
+  const key = actualSize ? 'none' : `${tab.width}x${tab.height}@${scale.toFixed(4)}`;
   if (tab.applied === key) return;
   tab.applied = key;
 
   let dbg;
   try { dbg = cdp.attach(tab.contents); } catch { tab.applied = null; return; }
-  const done = Math.abs(scale - 1) < 0.001
+  const done = actualSize
     ? dbg.sendCommand('Emulation.clearDeviceMetricsOverride')
     : dbg.sendCommand('Emulation.setDeviceMetricsOverride', {
       width: Math.round(tab.width / scale),
@@ -45,19 +48,21 @@ function apply(tab) {
       scale,
     });
   done.catch(() => { tab.applied = null; });
+
+  const info = `${scale.toFixed(4)}|${fitted}`;
+  if (tab.info === info) return;
+  tab.info = info;
   onInfo({ webContentsId: tab.contents.id, zoom: scale, fitted });
 }
 
 // options: { settings, onInfo({ webContentsId, zoom, fitted }), onZoomRequest(webContentsId, 'in'|'out') }
 function init(options) {
-  settings = options.settings;
-  if (options.onInfo) onInfo = options.onInfo;
-  if (options.onZoomRequest) onZoomRequest = options.onZoomRequest;
+  ({ settings, onInfo, onZoomRequest } = options);
 }
 
 // Called for every tab's webContents.
 function watch(contents) {
-  const tab = { contents, width: 0, height: 0, zoom: 1, applied: null };
+  const tab = { contents, width: 0, height: 0, zoom: 1, applied: null, info: null };
   tabs.set(contents.id, tab);
 
   // Keep Chromium's shared per-site zoom at 100%; per-tab zoom is emulated.

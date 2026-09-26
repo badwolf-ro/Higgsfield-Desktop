@@ -12,14 +12,12 @@
   const TOAST_MS = 5000;
   const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
-  let HOME = window.HFActions.HOME;
-  let SECTIONS = window.HFActions.SECTIONS;
-  let PARTITION = 'persist:higgsfield';
+  // main refuses to attach a webview to anything but a Higgsfield page, so never hand one another src.
+  const { HOME, PARTITION, SECTIONS, isSite } = window.HFActions;
 
   let api = null;
   let restoring = false; // panels disposed while rebuilding are not user closes
   let locked = false;
-  let layoutToken = null; // echoed with every save so main can drop saves meant for a previous project
   let seq = 0;
   const pages = new Map(); // panel id -> Page
   const headerParts = new Set(); // per-group header widgets that mirror the active tab
@@ -30,13 +28,6 @@
 
   function parse(url) {
     try { return new URL(url); } catch { return null; }
-  }
-
-  // main refuses to attach a webview to anything else, so never hand one another src.
-  function isSite(url) {
-    const u = parse(url);
-    return !!u && u.protocol === 'https:' &&
-      (u.hostname === 'higgsfield.ai' || u.hostname.endsWith('.higgsfield.ai'));
   }
 
   function origin(u) {
@@ -121,6 +112,7 @@
     marketing: ['M4 10v4h3l8 4.5v-13L7 10z', 'M18.5 9a4 4 0 0 1 0 6'],
     community: ['M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z', 'M2.5 20a6.5 6.5 0 0 1 13 0', 'M16 4.5a3.5 3.5 0 0 1 0 6.5', 'M18 14.2a6.5 6.5 0 0 1 3.5 5.8'],
     dot: ['M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6'],
+    check: ['M5 12.5l4.5 4.5L19 7.5'],
   };
 
   function icon(name) {
@@ -162,6 +154,8 @@
       this.pageTitle = '';
       this.ready = false;
       this.loading = false;
+      this.canBack = false;
+      this.canForward = false;
       this.webContentsId = null;
       this.zoom = 1; // the tab's own zoom; main turns it into a CDP viewport scale
       this.effectiveZoom = null; // what main applied (own zoom x fit-to-width), from viewportInfo
@@ -238,6 +232,11 @@
     }
 
     changed() {
+      if (this.ready) {
+        // Each is a synchronous call to main, so header refreshes read these copies instead.
+        this.canBack = this.webview.canGoBack();
+        this.canForward = this.webview.canGoForward();
+      }
       for (const watch of this.watchers) watch(this);
       refreshUi();
       tabsChanged();
@@ -273,11 +272,11 @@
     }
 
     canGoBack() {
-      return this.ready && this.webview.canGoBack();
+      return this.canBack;
     }
 
     canGoForward() {
-      return this.ready && this.webview.canGoForward();
+      return this.canForward;
     }
 
     load(url) {
@@ -604,7 +603,6 @@
       return {
         webContentsId: page ? page.webContentsId : null,
         title: panel.api.title || 'Higgsfield',
-        url: page ? page.currentUrl : '',
         active: panel === active,
         visible: group.activePanel === panel,
       };
@@ -627,7 +625,7 @@
 
   function saveNow() {
     saveLayout.cancel();
-    if (api) hf.saveLayout(api.toJSON(), layoutToken);
+    if (api) hf.saveLayout(api.toJSON());
   }
 
   const saveLayout = debounce(saveNow, 500);
@@ -649,7 +647,6 @@
   }
 
   function loadLayout(command) {
-    if (command.token != null) layoutToken = command.token;
     applyLayout(command.layout || null);
     closedUrls.length = 0;
     saveNow();
@@ -659,9 +656,9 @@
   }
 
   // ---------- window chrome: one toolbar row ----------
-  // [Cinema Studio project chip] … [status] [Workspace ▾] [lock]
+  // [section buttons ▾] [Cinema Studio project chip] … [status] [Workspace ▾] [lock]
 
-  const chrome = { workspaces: [], csProject: null, csProjects: [], menu: null };
+  const chrome = { quick: [], workspaces: [], csProject: null, csProjects: [], menu: null };
 
   function toolButton(className, children, label) {
     const button = el('button', 'hf-tool-button ' + className);
@@ -673,6 +670,15 @@
 
   function buildToolbar() {
     const bar = document.getElementById('toolbar');
+
+    const quick = el('div', 'hf-quick');
+    quick.setAttribute('role', 'toolbar');
+    quick.setAttribute('aria-label', 'Sections');
+    const quickMore = toolButton('hf-quick-more', [icon('chevron')], 'Choose toolbar buttons');
+    quickMore.title = 'Choose toolbar buttons';
+    quickMore.setAttribute('aria-haspopup', 'menu');
+    quickMore.setAttribute('aria-expanded', 'false');
+    quickMore.addEventListener('click', () => toggleMenu(quickMore, quickMenu, 'left'));
 
     const projectName = el('span', 'hf-project-name');
     const projectButton = toolButton('hf-project-chip', [icon('cinema'), projectName, icon('chevron')]);
@@ -700,8 +706,49 @@
       hf.setLocked(locked);
     });
 
-    bar.append(projectButton, el('div', 'hf-toolbar-spacer'), status, wsButton, lockButton);
-    Object.assign(chrome, { projectButton, projectName, activity, lastFile, wsButton, lockButton });
+    bar.append(quick, quickMore, projectButton, el('div', 'hf-toolbar-spacer'), status, wsButton, lockButton);
+    Object.assign(chrome, { bar, quickBox: quick, projectButton, projectName, activity, lastFile, wsButton, lockButton });
+    new ResizeObserver(fitToolbar).observe(bar);
+  }
+
+  // Section buttons drop their labels when the row runs out of room.
+  function fitToolbar() {
+    const bar = chrome.bar;
+    bar.classList.remove('hf-compact');
+    bar.classList.toggle('hf-compact', bar.scrollWidth > bar.clientWidth);
+  }
+
+  // Goes to a tab already showing the section, or opens one.
+  function openSection(section, newTab) {
+    const shows = page => page && sectionFor(page.url) === section;
+    const page = newTab ? null : (shows(activePage()) ? activePage() : [...pages.values()].find(shows));
+    if (page) showPage(page);
+    else openAfterActive(section.url);
+  }
+
+  function setQuickSections(ids) {
+    chrome.quick = Array.isArray(ids) ? ids : [];
+    const buttons = SECTIONS.filter(s => chrome.quick.includes(s.id)).map(section => {
+      const button = toolButton('hf-quick-button', [icon(section.id), el('span', null, section.label)], section.label);
+      button.title = section.label + ' (Ctrl+click: new tab)';
+      button.dataset.section = section.id;
+      button.addEventListener('click', e => openSection(section, e.ctrlKey));
+      button.addEventListener('auxclick', e => { if (e.button === 1) openSection(section, true); });
+      return button;
+    });
+    chrome.quickBox.replaceChildren(...buttons);
+    syncQuickSections();
+    fitToolbar();
+    if (chrome.menu && chrome.menu.build === quickMenu) reopenMenu();
+  }
+
+  // Marks the button of the section the active tab is showing.
+  function syncQuickSections() {
+    const page = api && activePage();
+    const current = page && sectionFor(page.url);
+    for (const button of chrome.quickBox.children) {
+      button.classList.toggle('hf-current', !!current && current.id === button.dataset.section);
+    }
   }
 
   // The Cinema Studio project of the active tab (main detects it), or null.
@@ -716,6 +763,7 @@
     } else if (chrome.menu && chrome.menu.anchor === button) {
       closeMenu();
     }
+    fitToolbar();
   }
 
   function setCsProjects(items) {
@@ -753,9 +801,21 @@
     button.hidden = false;
     button.replaceChildren(icon('download'), el('span', null, baseName(filePath)));
     button.title = 'Show ' + baseName(filePath) + ' in folder';
+    fitToolbar();
   }
 
-  // Menu builders get add(text, onClick, { disabled, icon }), label(text), separator().
+  // Menu builders get add(text, onClick, { disabled, icon, checked }), label(text), separator().
+  // A checkable item leaves the menu open, so several can be toggled in a row.
+  function quickMenu({ add, label }) {
+    label('Show in toolbar');
+    for (const section of SECTIONS) {
+      const shown = chrome.quick.includes(section.id);
+      add(section.label, () => hf.setQuickSections(shown
+        ? chrome.quick.filter(id => id !== section.id)
+        : [...chrome.quick, section.id]), { icon: section.id, checked: shown });
+    }
+  }
+
   function workspaceMenu({ add, label, separator }) {
     if (chrome.workspaces.length) {
       label('Workspaces');
@@ -767,7 +827,7 @@
     add('Save Workspace…', () => hf.workspace('save'));
     add('Manage Workspaces…', () => hf.workspace('manage'));
     separator();
-    add('Reset Layout', () => hf.workspace('reset'));
+    add('Reset Layout', resetLayout);
   }
 
   function projectMenu({ add, label, separator }) {
@@ -776,9 +836,9 @@
     separator();
     if (chrome.csProjects.length) {
       label('Recent projects');
-      for (const p of chrome.csProjects) add(p.name, () => hf.projectAction('open', { key: p.key }), { icon: 'cinema' });
+      for (const p of chrome.csProjects) add(p.name, () => openAfterActive(p.url), { icon: 'cinema' });
     }
-    add('All Cinema Studio projects', () => hf.projectAction('all'));
+    add('All Cinema Studio projects', () => openAfterActive(HOME + 'generate?view=projects'));
   }
 
   function toggleMenu(anchor, build, align) {
@@ -787,25 +847,34 @@
     if (!same) openMenu(anchor, build, align);
   }
 
+  // Rebuilds the open menu with fresh contents, keeping keyboard focus on the same item.
   function reopenMenu() {
-    const { anchor, build, align } = chrome.menu;
+    const { anchor, build, align, element } = chrome.menu;
+    const focusIndex = [...element.querySelectorAll('.hf-menu-item:not(:disabled)')].indexOf(document.activeElement);
     closeMenu();
-    openMenu(anchor, build, align);
+    openMenu(anchor, build, align, focusIndex);
   }
 
-  function openMenu(anchor, build, align) {
+  function openMenu(anchor, build, align, focusIndex = 0) {
     const menu = el('div', 'hf-menu');
     menu.setAttribute('role', 'menu');
     build({
       add: (text, onClick, opts = {}) => {
         const item = el('button', 'hf-menu-item');
+        const checkable = opts.checked !== undefined;
         item.type = 'button';
-        item.setAttribute('role', 'menuitem');
+        item.setAttribute('role', checkable ? 'menuitemcheckbox' : 'menuitem');
         item.disabled = !!opts.disabled;
         if (opts.icon) item.appendChild(icon(opts.icon));
         item.appendChild(el('span', 'hf-menu-text', text));
+        if (checkable) {
+          item.setAttribute('aria-checked', String(!!opts.checked));
+          const check = icon('check');
+          check.classList.add('hf-menu-check');
+          item.appendChild(check);
+        }
         item.addEventListener('click', () => {
-          closeMenu();
+          if (!checkable) closeMenu();
           if (onClick) onClick();
         });
         menu.appendChild(item);
@@ -854,8 +923,8 @@
         window.removeEventListener('blur', closeMenu);
       },
     };
-    const first = items()[0];
-    if (first) first.focus();
+    const target = items()[focusIndex] || items()[0];
+    if (target) target.focus();
   }
 
   function closeMenu() {
@@ -871,6 +940,7 @@
 
   function refreshUi() {
     for (const part of headerParts) part.refresh();
+    syncQuickSections();
   }
 
   // ---------- toasts ----------
@@ -993,11 +1063,6 @@
       background: !!c.background,
       index: activePanel() ? indexAfter(activePanel()) : undefined,
     }),
-    navigate: c => {
-      const page = activePage();
-      if (page) page.load(c.url);
-      else openTab({ url: c.url });
-    },
     closeTab: () => { const panel = activePanel(); if (panel) panel.api.close(); },
     reopenClosedTab: reopenClosed,
     nextTab: () => cycle(1),
@@ -1020,7 +1085,8 @@
     loadLayout,
     prompt: showPrompt,
     workspaces: c => setWorkspaces(c.items),
-    csProject: c => setCsProject('project' in c ? c.project : c),
+    quickSections: c => setQuickSections(c.ids),
+    csProject: setCsProject,
     csProjects: c => setCsProjects(c.items),
     setLocked: c => setLocked(c.locked),
     viewportInfo: c => {
@@ -1066,9 +1132,8 @@
   // a webview; otherwise a quick flick onto a page never passes dockview's drag threshold
   // and the release is lost inside the guest. Dockview only shields webviews once a drag
   // has started, so shield them from the press itself.
-  // Same for popovers (dockview's tab menu and overflow list, the workspace menu): they
-  // close on Escape or a click outside, both of which a focused or clicked webview would
-  // swallow.
+  // Same for dockview's popovers (the tab menu and the overflow list): they close on Escape
+  // or a click outside, both of which a focused or clicked webview would swallow.
   function shieldWebviews() {
     const body = document.body;
     const release = () => body.classList.remove('hf-pressing');
@@ -1156,17 +1221,13 @@
     } catch (err) {
       console.error('shell: no initial state', err);
     }
-    if (isSite(state.home)) HOME = state.home;
-    if (Array.isArray(state.sections) && state.sections.length) SECTIONS = state.sections;
-    if (typeof state.partition === 'string' && state.partition) PARTITION = state.partition;
     locked = !!state.locked;
-    if (state.layoutToken != null) layoutToken = state.layoutToken;
 
     buildToolbar();
     setWorkspaces(state.workspaces);
     setGenerating(state.generating);
-    setCsProject(state.csProject || null);
-    setCsProjects(Array.isArray(state.csProjects) ? state.csProjects : state.csProjects && state.csProjects.items);
+    setCsProjects(state.csProjects);
+    setQuickSections(state.quickSections);
     api = createDock();
     setLocked(locked);
     shieldWebviews();
