@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0
+
+### Changed
+
+- **Continue with Google** no longer tries to carry a login over from a separate browser: Higgsfield's sign-in service rejects a login made in one browser and replayed in another, so it could not stay signed in. It now shows a short message that Google sign-in needs official support from Higgsfield, with a **Sign in with email** button that opens Higgsfield's own email login in the tab. Email, Apple, Microsoft and Discord sign-in work directly in the app and use the same account.
+
 ## 2.2.1
 
 ### Fixed
