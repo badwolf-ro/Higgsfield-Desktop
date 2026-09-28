@@ -157,7 +157,12 @@ Opening a section in a new tab, saving a workspace, locking the layout and openi
 
 - **Inside the app.** Signing in (Google, Apple, Microsoft, Discord, email) and checkout pages open inside the app, so the session comes back to Higgsfield.
 - **In your browser.** Links to other sites, such as Instagram, X or a Discord invite, open in your normal browser.
-- **Google sign-in.** The app identifies itself as regular Chrome, because Google blocks sign-in from embedded browsers that identify themselves as Electron. If Google still refuses, sign in with email instead.
+- **Google sign-in.** Google does not allow signing in to a Google account inside an app like this one, so **Continue with Google** works differently:
+  1. The app offers to do it in **Chrome or Edge**. Chrome is used if it is installed, otherwise Edge, which comes with Windows.
+  2. A separate window opens on Higgsfield, with a fresh browser profile of its own. Sign in there with Google.
+  3. Close that window once your account shows. The app copies Higgsfield's login from that window (only Higgsfield's login cookies, nothing of Google's), deletes the separate profile and reloads your tabs, signed in.
+
+  This is a stand-in until Higgsfield offers an official way to sign in to desktop apps from a browser. Email, Apple, Microsoft and Discord sign-in work directly in the app.
 
 ## Where your data lives
 
@@ -171,6 +176,7 @@ Everything is in `%APPDATA%\Higgsfield`:
 | `projects.json` | Cinema Studio projects the app has seen, and their folders |
 | `window-state.json` | Window size and position |
 | `Partitions\higgsfield\` | The site's cookies, login and cache |
+| `Browser sign-in\` | The separate browser profile for Google sign-in. It exists only while that window is open. |
 
 Deleting the folder resets the app completely.
 
@@ -205,6 +211,7 @@ src/main/workspaces.js      Saved workspaces
 src/main/viewport.js        Per-tab desktop-width layout and zoom (CDP device-metrics emulation)
 src/main/notify.js          Generation-finished detection, Windows notifications, finished files for auto-download
 src/main/cdp.js             One DevTools Protocol session per tab, shared by the two above
+src/main/browserSignIn.js   Continue with Google in a Chrome or Edge window, and taking over the login
 src/main/tray.js            Tray icon and close-to-tray
 src/main/menu.js            Menu bar
 src/shared/actions.js       Which addresses are Higgsfield, its sections, every action and its default shortcut
@@ -221,6 +228,7 @@ build/icon.png              App icon
 - **Generation alerts.** They come from Higgsfield's job-status event stream (`fnf-notification/notifications/stream`, event `job:status_changed`) and its `jobs/status-batch` poll. The app applies the site's own rule for "finished": `completed` once the IP check is done; `failed`, `nsfw`, `ip_detected`.
 - **Download finished generations.** When a job the app saw start finishes as `completed`, the app saves its full-size file (`results.raw.url`, the same file the site's Download button fetches) through the tab that started it, so it lands in that tab's folder.
 - **Download button.** The site fetches the file and saves it as a normal browser download. The app decides where it goes from the tab it came from.
+- **Google sign-in.** A tab heading to `accounts.google.com` is stopped. Chrome or Edge opens with `--app=https://higgsfield.ai/` and a fresh `--user-data-dir`. After that window closes, the same profile is started headless with a DevTools port, only so the browser can decrypt its own cookies. The cookies of Higgsfield's sign-in service (`__client*`, `__session*`, `hf_clerk_*`) are read and set in the app's session, and the profile is deleted.
 - **Cinema Studio projects.** They are recognised from the tab's address: `/generate?projectId=<id>` or `/generate/@user/<project>`.
 
 ## License

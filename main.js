@@ -9,6 +9,7 @@ const notify = require('./src/main/notify');
 const viewport = require('./src/main/viewport');
 const workspaces = require('./src/main/workspaces');
 const projects = require('./src/main/projects');
+const browserSignIn = require('./src/main/browserSignIn');
 const menu = require('./src/main/menu');
 const { PARTITION, isSite, SECTIONS, byId } = require('./src/shared/actions');
 
@@ -22,13 +23,13 @@ const SHELL_PAGE = path.join(__dirname, 'src', 'renderer', 'shell', 'index.html'
 const SETTINGS_PAGE = path.join(__dirname, 'src', 'renderer', 'settings', 'index.html');
 const STATE_FILE = path.join(app.getPath('userData'), 'window-state.json');
 const LAYOUT_FILE = path.join(app.getPath('userData'), 'layout.json');
+const SIGN_IN_PROFILE = path.join(app.getPath('userData'), 'Browser sign-in'); // exists only during a sign-in
 
 // Sign-in and payment pages that must open inside the app so the flow
 // can hand the session back to Higgsfield. Paths narrow hosts that also
 // serve ordinary public pages (a Discord invite should go to the browser).
+// Google sign-in is not among them: it runs in a real browser (browserSignIn.js).
 const FLOW_HOSTS = [
-  { host: /^accounts\.google\.[a-z.]+$/ },
-  { host: /^accounts\.youtube\.com$/ },
   { host: /^appleid\.apple\.com$/ },
   { host: /^login\.(microsoftonline|live)\.com$/ },
   { host: /^(www\.)?facebook\.com$/, path: /^\/(v[\d.]+\/)?dialog\/oauth/ },
@@ -290,6 +291,61 @@ async function clearCache() {
   });
 }
 
+// Google does not allow signing in inside an app's embedded browser, so
+// "Continue with Google" runs in a separate Chrome or Edge window instead.
+// A stand-in until Higgsfield offers an official sign-in for desktop apps.
+let googleSignIn = null;
+function signInWithGoogle() {
+  if (googleSignIn) toast('Finish signing in in the browser window, then close it.');
+  else googleSignIn = runGoogleSignIn().finally(() => { googleSignIn = null; });
+}
+
+async function runGoogleSignIn() {
+  const browser = browserSignIn.findBrowser();
+  if (!browser) {
+    await showMessage({
+      type: 'info',
+      title: 'Higgsfield',
+      message: 'Google sign-in needs Chrome or Edge',
+      detail: 'Google does not allow signing in inside other apps, so it happens in Google Chrome or Microsoft Edge, '
+        + 'and neither is installed. You can sign in with email, Apple, Microsoft or Discord instead.',
+    });
+    return;
+  }
+  const { response } = await showMessage({
+    type: 'info',
+    title: 'Higgsfield',
+    message: `Sign in with Google in ${browser.name}`,
+    detail: `Google does not allow signing in inside other apps, so a separate ${browser.name} window opens with Higgsfield.\n\n`
+      + '1. Log in there with Continue with Google.\n'
+      + '2. Close that window once you see your account.\n\n'
+      + 'The app then takes over your Higgsfield login. The window uses a fresh profile of its own, '
+      + 'which is deleted afterwards.',
+    buttons: [`Open ${browser.name}`, 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) return;
+  toast(`Sign in with Google in the ${browser.name} window, then close it.`);
+  try {
+    const { cookies, signedIn } = await browserSignIn.signIn(browser, SIGN_IN_PROFILE);
+    if (!signedIn) {
+      showMessage({
+        type: 'warning',
+        title: 'Higgsfield',
+        message: 'Not signed in',
+        detail: `No Higgsfield login was found in the ${browser.name} window. Close it only once your account shows, then try again.`,
+      });
+      return;
+    }
+    await browserSignIn.importCookies(session.fromPartition(PARTITION), cookies);
+    sendCommand({ type: 'reloadAll' });
+    toast('Signed in to Higgsfield');
+  } catch (err) {
+    showMessage({ type: 'error', title: 'Higgsfield', message: 'Google sign-in did not finish', detail: err.message });
+  }
+}
+
 async function clearAllData() {
   const { response } = await showMessage({
     type: 'warning',
@@ -365,6 +421,10 @@ function wirePage(contents) {
   contents.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) trackTab(contents, url); });
   contents.once('destroyed', () => tabProjects.delete(contents.id));
   contents.setWindowOpenHandler(({ url, disposition }) => {
+    if (browserSignIn.isGoogleSignIn(url)) {
+      signInWithGoogle();
+      return { action: 'deny' };
+    }
     if (isSite(url)) {
       sendCommand({ type: 'newTab', url, background: disposition === 'background-tab' });
       return { action: 'deny' };
@@ -382,11 +442,23 @@ function wirePage(contents) {
   contents.on('did-create-window', win => wirePage(win.webContents));
 
   contents.on('will-navigate', (event, url) => {
+    if (browserSignIn.isGoogleSignIn(url)) {
+      event.preventDefault();
+      signInWithGoogle();
+      return;
+    }
     // Once a sign-in or checkout flow has left Higgsfield, let it finish
     // wherever it goes; it returns to Higgsfield on its own.
     if (isSite(url) || isFlow(url) || !isSite(contents.getURL())) return;
     event.preventDefault();
     openExternal(url);
+  });
+  // Higgsfield's sign-in service redirects to Google rather than linking to it.
+  contents.on('will-redirect', event => {
+    if (event.isMainFrame && browserSignIn.isGoogleSignIn(event.url)) {
+      event.preventDefault();
+      signInWithGoogle();
+    }
   });
 
   contents.on('context-menu', (_event, params) => {

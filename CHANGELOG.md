@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0
+
+### New
+
+- **Continue with Google.** Google does not allow signing in inside apps, so Continue with Google now runs in a separate Chrome or Edge window, with a fresh profile of its own.
+  - Once you have signed in there and closed the window, the app takes over the Higgsfield login and the separate profile is deleted.
+  - Only Higgsfield's login cookies are copied. Nothing of Google's is.
+  - This is a stand-in until Higgsfield offers an official sign-in for desktop apps.
+
 ## 2.1.0
 
 ### New
