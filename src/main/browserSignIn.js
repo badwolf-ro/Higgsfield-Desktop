@@ -4,7 +4,7 @@
 // its own. Once the user has signed in to Higgsfield there and closed the window,
 // that profile is opened again without a window, Higgsfield's login cookies (and
 // only those) are read from it, and the profile is deleted.
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { HOME, isSite } = require('../shared/actions');
@@ -47,8 +47,28 @@ function exited(child) {
   });
 }
 
-function removeProfile(dir) {
-  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+// Ends the whole browser process tree. child.kill() would leave the browser's
+// own child processes running, and those keep the profile folder locked.
+function killTree(child) {
+  if (!child || child.exitCode !== null) return;
+  if (process.platform === 'win32') {
+    try { spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); return; } catch { /* fall through */ }
+  }
+  child.kill();
+}
+
+// Best-effort: a browser process that has not fully exited yet can hold the
+// folder locked, so deleting it must never fail the sign-in. Retries for a few
+// seconds, then gives up (the next sign-in deletes it before it starts).
+async function removeProfile(dir) {
+  if (!fs.existsSync(dir)) return true;
+  for (let i = 0; i < 15; i++) {
+    try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); return true; }
+    catch { await wait(500); }
+  }
+  return false;
 }
 
 // The port and path the browser writes once its DevTools endpoint is listening.
@@ -89,25 +109,29 @@ async function readSiteCookies(browser, dir) {
     const { cookies } = await devtoolsCall(await waitForEndpoint(dir, child), 'Storage.getCookies');
     return cookies.filter(c => !c.partitionKey && isLoginCookie(c));
   } finally {
-    child.kill();
+    killTree(child);
     await exited(child);
   }
 }
 
 // Opens the browser window and waits for the user to close it. Resolves to
 // { cookies, signedIn }; signedIn is false when no Higgsfield login was found.
+// Reading the login is what matters; clearing the temporary profile is
+// best-effort and never fails the sign-in.
 async function signIn(browser, dir) {
-  removeProfile(dir);
+  await removeProfile(dir);
+  const child = spawn(browser.exe, [`--user-data-dir=${dir}`, ...COMMON_ARGS, `--app=${HOME}`], { stdio: 'ignore' });
+  await exited(child);
+  let cookies = [];
   try {
-    const child = spawn(browser.exe, [`--user-data-dir=${dir}`, ...COMMON_ARGS, `--app=${HOME}`], { stdio: 'ignore' });
-    await exited(child);
-    const cookies = await readSiteCookies(browser, dir);
-    // Clerk sets __client_uat to 0 while nobody is signed in.
-    const signedIn = cookies.some(c => c.name.startsWith('__client_uat') && c.value && c.value !== '0');
-    return { cookies, signedIn };
+    cookies = await readSiteCookies(browser, dir);
   } finally {
-    removeProfile(dir);
+    await wait(1000); // let the browser release the profile's files
+    await removeProfile(dir);
   }
+  // Clerk sets __client_uat to 0 while nobody is signed in.
+  const signedIn = cookies.some(c => c.name.startsWith('__client_uat') && c.value && c.value !== '0');
+  return { cookies, signedIn };
 }
 
 // Replaces the app's Higgsfield login cookies with the ones from the browser.

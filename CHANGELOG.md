@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1
+
+### Fixed
+
+- **Google sign-in "Permission denied" error.** After the browser window closed, the app deleted its temporary sign-in profile before the browser had released the folder, which failed with `EPERM` and aborted the sign-in. The login is now taken over first, and clearing that profile is best-effort, so a locked folder no longer stops you signing in.
+
 ## 2.2.0
 
 ### New
