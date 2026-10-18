@@ -1,7 +1,7 @@
 {
   "name": "higgsfield-desktop",
   "productName": "Higgsfield",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "description": "Desktop app for higgsfield.ai on Windows and macOS: dockable tabs, workspaces, Cinema Studio project folders and generation alerts",
   "author": "Radu@BadWolf <contact@badwolf.ro>",
   "license": "MIT",

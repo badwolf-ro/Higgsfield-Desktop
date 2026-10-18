@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.5.0
 
 ### New
 
@@ -12,6 +12,7 @@
   - Closing the window keeps the app running in the Dock instead of a tray icon; the Dock icon brings it back, and right-clicking it offers New Tab and Open Downloads Folder. The Dock icon shows how many generations are running and bounces when one finishes in the background.
   - Downloads, notifications and "Show in Finder" use the Mac's own wording and places; data lives in `~/Library/Application Support/Higgsfield`.
   - `npm run dist:mac` builds a `.dmg` and `.zip` for each architecture, ad-hoc signed.
+- **Preview label you can't miss.** Higgsfield's "Preview · 480p" label on low-resolution previews is shown in bright red with a black outline and a little larger, so a preview is never mistaken for the full-quality result.
 
 ## 2.4.1
 

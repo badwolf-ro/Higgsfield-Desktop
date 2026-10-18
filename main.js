@@ -10,6 +10,7 @@ const viewport = require('./src/main/viewport');
 const workspaces = require('./src/main/workspaces');
 const projects = require('./src/main/projects');
 const folders = require('./src/main/folders');
+const previewLabel = require('./src/main/previewlabel');
 const menu = require('./src/main/menu');
 const { PARTITION, isSite, SECTIONS, byId } = require('./src/shared/actions');
 
@@ -744,6 +745,7 @@ if (!app.requestSingleInstanceLock()) {
     notify.watch(contents);
     folders.watch(contents);
     viewport.watch(contents);
+    previewLabel.watch(contents);
   });
 
   app.whenReady().then(() => {

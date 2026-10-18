@@ -124,6 +124,7 @@ When an image or video finishes, you get a Windows notification and the taskbar 
 - **Click the notification** to jump back to the tab that started it.
 - **Failures** (blocked or failed) are reported too; ones you cancel are not.
 - The toolbar shows a **running count**, and both alerts can be turned off in **Settings → General**.
+- **Previews stand out.** Higgsfield's *Preview · 480p* label on a low-resolution preview is shown in bright red with a black outline, so a preview is never mistaken for the full-quality result.
 
 > Higgsfield raises no notifications of its own for image or video jobs. The app reads the same live job-status updates the site receives, entirely on your machine, and never sends anything anywhere.
 
@@ -222,6 +223,7 @@ src/main/hotkeys.js         App shortcuts (before-input-event on every tab) and 
 src/main/downloads.js       Where each download goes, Save without asking, unique file names, taskbar progress
 src/main/projects.js        Cinema Studio projects: detection, real names, pinning, project folders
 src/main/folders.js         Reads project names, owners and ids from Higgsfield's API responses in each tab
+src/main/previewlabel.js    Restyles the site's "Preview · 480p" label in bright red so previews stand out
 src/main/workspaces.js      Saved workspaces
 src/main/viewport.js        Per-tab desktop-width layout and zoom (CDP device-metrics emulation)
 src/main/notify.js          Generation-finished detection, Windows notifications, finished files for auto-download
